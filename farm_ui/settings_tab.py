@@ -50,8 +50,8 @@ class SettingsTabMixin:
         car_col.setSpacing(8)
 
         self._set_car_combo = QComboBox()
-        for car_id, car in config.CFG.cars.items():
-            self._set_car_combo.addItem(car.name, car_id)
+        for car_id, info in farm_settings.CAR_CATALOG.items():
+            self._set_car_combo.addItem(info.name, car_id)
         self._set_car_combo.setFixedWidth(200)
         _row(car_col, "Car", self._set_car_combo)
 
@@ -128,27 +128,27 @@ class SettingsTabMixin:
         filter_col = QVBoxLayout(filter_box)
         filter_col.setSpacing(8)
 
-        self._set_filter_r = QSpinBox()
-        self._set_filter_r.setRange(1, 99)
-        self._set_filter_r.setFixedWidth(80)
-        filter_r_row = QHBoxLayout()
-        filter_r_row.addWidget(_required_label('"R class" Row', 160))
-        filter_r_row.addWidget(self._set_filter_r)
-        filter_r_row.addWidget(_small("row in the filter list"))
-        filter_r_row.addWidget(_info_button(self._show_multiplier_filter_info))
-        filter_r_row.addStretch()
-        filter_col.addLayout(filter_r_row)
+        self._set_filter_perf = QSpinBox()
+        self._set_filter_perf.setRange(1, 99)
+        self._set_filter_perf.setFixedWidth(80)
+        filter_perf_row = QHBoxLayout()
+        filter_perf_row.addWidget(_required_label("Performance Class Row", 160))
+        filter_perf_row.addWidget(self._set_filter_perf)
+        filter_perf_row.addWidget(_small("row in the filter list"))
+        filter_perf_row.addWidget(_info_button(self._show_multiplier_filter_info))
+        filter_perf_row.addStretch()
+        filter_col.addLayout(filter_perf_row)
 
-        self._set_filter_rr = QSpinBox()
-        self._set_filter_rr.setRange(1, 99)
-        self._set_filter_rr.setFixedWidth(80)
-        filter_rr_row = QHBoxLayout()
-        filter_rr_row.addWidget(_required_label('"Retro Rally" Row', 160))
-        filter_rr_row.addWidget(self._set_filter_rr)
-        filter_rr_row.addWidget(_small("row in the filter list"))
-        filter_rr_row.addWidget(_info_button(self._show_multiplier_filter_info))
-        filter_rr_row.addStretch()
-        filter_col.addLayout(filter_rr_row)
+        self._set_filter_type = QSpinBox()
+        self._set_filter_type.setRange(1, 99)
+        self._set_filter_type.setFixedWidth(80)
+        filter_type_row = QHBoxLayout()
+        filter_type_row.addWidget(_required_label("Car Type Row", 160))
+        filter_type_row.addWidget(self._set_filter_type)
+        filter_type_row.addWidget(_small("row in the filter list"))
+        filter_type_row.addWidget(_info_button(self._show_multiplier_filter_info))
+        filter_type_row.addStretch()
+        filter_col.addLayout(filter_type_row)
 
         vbox.addWidget(filter_box)
 
@@ -211,9 +211,9 @@ class SettingsTabMixin:
         if idx >= 0:
             self._set_car_combo.setCurrentIndex(idx)
         self._load_car_fields()
-        self._set_code.setText(cfg.challenge_share_code)
-        self._set_filter_r.setValue(cfg.filter_r_class_row + 1)
-        self._set_filter_rr.setValue(cfg.filter_retro_rally_row + 1)
+        self._set_code.setText(config.CHALLENGE_SHARE_CODE)
+        self._set_filter_perf.setValue(cfg.filter_performance_class_row + 1)
+        self._set_filter_type.setValue(cfg.filter_car_type_row + 1)
         self._set_mult_col.setValue(cfg.multiplier_car_col + 1)
         self._set_mult_row.setValue(cfg.multiplier_car_row + 1)
         self._update_settings_econ()
@@ -222,13 +222,14 @@ class SettingsTabMixin:
         car_id = self._set_car_combo.currentData()
         if car_id is None:
             return
-        car = config.CFG.cars[car_id]
-        self._set_price.setValue(car.price_cr)
-        self._set_sp.setValue(car.sp_to_unlock)
-        self._set_sws.setValue(car.super_wheelspins)
-        self._set_ws.setValue(car.wheelspins)
-        self._set_shop_col.setValue(car.car_collection_col + 1)  # stored 0-based, shown 1-based
-        self._set_shop_row.setValue(car.car_collection_row + 1)
+        info = farm_settings.CAR_CATALOG[car_id]
+        user = config.CFG.cars[car_id]
+        self._set_price.setValue(info.price_cr)
+        self._set_sp.setValue(info.sp_to_unlock)
+        self._set_sws.setValue(info.super_wheelspins)
+        self._set_ws.setValue(info.wheelspins)
+        self._set_shop_col.setValue(user.car_collection_col + 1)  # stored 0-based, shown 1-based
+        self._set_shop_row.setValue(user.car_collection_row + 1)
 
     def _on_copy_share_code(self) -> None:
         QApplication.clipboard().setText(self._set_code.text())
@@ -268,8 +269,8 @@ class SettingsTabMixin:
         car.car_collection_row = self._set_shop_row.value() - 1
         car.car_collection_configured = True
         cfg.selected_car = car_id
-        cfg.filter_r_class_row = self._set_filter_r.value() - 1
-        cfg.filter_retro_rally_row = self._set_filter_rr.value() - 1
+        cfg.filter_performance_class_row = self._set_filter_perf.value() - 1
+        cfg.filter_car_type_row = self._set_filter_type.value() - 1
         cfg.multiplier_car_col = self._set_mult_col.value() - 1
         cfg.multiplier_car_row = self._set_mult_row.value() - 1
         cfg.multiplier_car_configured = True

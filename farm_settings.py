@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Persistent user settings for the FH6 skill farm.
 
-Stored in skill_farm_settings.json under APP_DATA_DIR. Grid positions (Car
-Collection / owned-car list) differ per user account, so they live here
-instead of in code. Per-car unlock key sequences stay in farm_core/unlock.py
-(UNLOCK_SEQUENCES), keyed by CarConfig.car_id.
+Stored in skill_farm_settings.json under APP_DATA_DIR — but only genuine user
+input: grid positions (Car Collection / owned-car list) differ per user
+account, so those live here instead of in code. Fixed facts about a car
+(name, price, SP to unlock, wheelspin yield) are NOT user input — they live in
+CAR_CATALOG below, in code, same as UNLOCK_SEQUENCES in farm_core/unlock.py.
+New cars are added by editing CAR_CATALOG (+ UNLOCK_SEQUENCES), not through
+the UI. Keeping catalog facts out of the settings file means a data fix (e.g.
+a corrected SP cost after a game patch) always takes effect immediately,
+instead of being silently overridden by whatever an existing settings file
+already has saved for that field.
 """
 
 from __future__ import annotations
@@ -54,14 +60,44 @@ TIMING_DEFAULTS: dict[str, float] = {
 }
 
 
-@dataclasses.dataclass
-class CarConfig:
-    car_id: str  # keys UNLOCK_SEQUENCES in skill_farm.py
+@dataclasses.dataclass(frozen=True)
+class CarInfo:
+    """Fixed facts about a farm car — from the game itself, not user input.
+
+    Add new cars here (and a matching UNLOCK_SEQUENCES entry in
+    farm_core/unlock.py) — never persisted to settings, so these values
+    always come from the running code, immune to whatever an older settings
+    file has saved.
+    """
+
+    car_id: str  # keys UNLOCK_SEQUENCES in farm_core/unlock.py
     name: str
     price_cr: int
     sp_to_unlock: int  # skill points spent to reach the wheelspin skills
     super_wheelspins: int  # yield per car
     wheelspins: int  # yield per car
+
+
+CAR_CATALOG: dict[str, CarInfo] = {
+    "lambo_revuelto": CarInfo(
+        car_id="lambo_revuelto",
+        name="Lamborghini Revuelto",
+        price_cr=346_750,
+        sp_to_unlock=39,
+        super_wheelspins=1,
+        wheelspins=3,
+    ),
+}
+
+
+@dataclasses.dataclass
+class CarConfig:
+    """User-specific data for one car — its position in the Car Collection
+    list. Everything else about the car (name, price, SP cost, wheelspin
+    yield) comes from CAR_CATALOG; see Settings.car for the combined view.
+    """
+
+    car_id: str  # keys CAR_CATALOG and UNLOCK_SEQUENCES
     # Position of the car in the Car Collection list — user-specific (depends
     # on which cars are available to the account). The list is always 5
     # columns wide, rows are dynamic, default sort = manufacturer name.
@@ -78,21 +114,42 @@ class CarConfig:
     car_collection_configured: bool
 
 
+@dataclasses.dataclass(frozen=True)
+class Car:
+    """Combined view of a car's CAR_CATALOG facts + its CarConfig user
+    settings — what Settings.car returns for convenient, read-only access.
+    """
+
+    car_id: str
+    name: str
+    price_cr: int
+    sp_to_unlock: int
+    super_wheelspins: int
+    wheelspins: int
+    car_collection_col: int
+    car_collection_row: int
+    car_collection_configured: bool
+
+
 @dataclasses.dataclass
 class Settings:
     selected_car: str
     cars: dict[str, CarConfig]
-    challenge_share_code: str
-    points_per_challenge: int  # with the 9x multiplier car active
-    # The 9x multiplier car is found by filtering the owned-car list to R
-    # class + Retro Rally. The filter is a checkbox list — enter toggles a
-    # box without closing the list — so both rows are counted as down presses
-    # from the TOP of the filter list (absolute, not relative to each other).
-    # User-specific: depends on how many categories precede these two.
-    filter_r_class_row: int
-    filter_retro_rally_row: int
+    # The 9x multiplier car is found by filtering the owned-car list to its
+    # Performance Class + Car Type (e.g. a stock Subaru 22B is Performance
+    # Class B / Retro Rally — but the multiplier isn't limited to that one
+    # car or class, so both are user-configured). The filter is a checkbox
+    # list — enter toggles a box without closing the list — so both rows are
+    # counted as down presses from the TOP of the filter list (absolute, not
+    # relative to each other). User-specific: depends on how many categories
+    # precede these two. Stored 0-based like car_collection_col/row above —
+    # the Settings tab shows these as (this value + 1); if hand-editing this
+    # file, subtract 1 from whatever row/column the UI would show you.
+    filter_performance_class_row: int
+    filter_car_type_row: int
     # Position of the multiplier car within the filtered "My Cars" grid
-    # (3 rows per column, dynamic columns) — user-specific.
+    # (3 rows per column, dynamic columns) — user-specific. Also stored
+    # 0-based / shown 1-based in the UI, same as the fields above.
     multiplier_car_col: int
     multiplier_car_row: int
     # True once the user has saved the filter rows + position via the
@@ -103,29 +160,37 @@ class Settings:
     timings: dict[str, float]
 
     @property
-    def car(self) -> CarConfig:
-        return self.cars[self.selected_car]
+    def car(self) -> Car:
+        info = CAR_CATALOG[self.selected_car]
+        user = self.cars[self.selected_car]
+        return Car(
+            car_id=info.car_id,
+            name=info.name,
+            price_cr=info.price_cr,
+            sp_to_unlock=info.sp_to_unlock,
+            super_wheelspins=info.super_wheelspins,
+            wheelspins=info.wheelspins,
+            car_collection_col=user.car_collection_col,
+            car_collection_row=user.car_collection_row,
+            car_collection_configured=user.car_collection_configured,
+        )
 
 
 def _default_settings() -> Settings:
-    lambo = CarConfig(
-        car_id="lambo_revuelto",
-        name="Lamborghini Revuelto",
-        price_cr=346_750,
-        sp_to_unlock=40,
-        super_wheelspins=1,
-        wheelspins=3,
-        car_collection_col=0,  # TODO: set per account (Settings tab)
-        car_collection_row=0,
-        car_collection_configured=False,
-    )
+    cars = {
+        car_id: CarConfig(
+            car_id=car_id,
+            car_collection_col=0,  # TODO: set per account (Settings tab)
+            car_collection_row=0,
+            car_collection_configured=False,
+        )
+        for car_id in CAR_CATALOG
+    }
     return Settings(
         selected_car="lambo_revuelto",
-        cars={lambo.car_id: lambo},
-        challenge_share_code="661885885",
-        points_per_challenge=10,  # working number — verify in-game
-        filter_r_class_row=0,  # TODO: set per account (Settings tab)
-        filter_retro_rally_row=0,
+        cars=cars,
+        filter_performance_class_row=0,  # TODO: set per account (Settings tab)
+        filter_car_type_row=0,
         multiplier_car_col=0,
         multiplier_car_row=0,
         multiplier_car_configured=False,
@@ -146,8 +211,11 @@ def load(path: pathlib.Path = SETTINGS_PATH) -> Settings:
 
     car_fields = {f.name for f in dataclasses.fields(CarConfig)}
     for car_id, car_data in data.get("cars", {}).items():
-        base = settings.cars.get(car_id)
-        merged = dataclasses.asdict(base) if base else {"car_id": car_id}
+        if car_id not in CAR_CATALOG:
+            print(f"[WARN] Skipping unknown car '{car_id}' in settings (not in CAR_CATALOG)")
+            continue
+        base = settings.cars[car_id]
+        merged = dataclasses.asdict(base)
         merged.update({k: v for k, v in car_data.items() if k in car_fields})
         try:
             settings.cars[car_id] = CarConfig(**merged)
@@ -156,10 +224,8 @@ def load(path: pathlib.Path = SETTINGS_PATH) -> Settings:
 
     for field in (
         "selected_car",
-        "challenge_share_code",
-        "points_per_challenge",
-        "filter_r_class_row",
-        "filter_retro_rally_row",
+        "filter_performance_class_row",
+        "filter_car_type_row",
         "multiplier_car_col",
         "multiplier_car_row",
         "multiplier_car_configured",

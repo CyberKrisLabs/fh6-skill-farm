@@ -25,6 +25,14 @@ from farm_core import config, keys, orchestrator
 from farm_ui.guide_content import START_FROM_INFO as _START_FROM_INFO
 from farm_ui.widgets import _CRSpinBox, _fixed_label, _info_button, _log_bridge, _sep, _small, _StdoutCapture
 
+# Starting from Main/Challenge always drives at least one fresh, undriven
+# challenge before any other phase runs. Entering the full SKILL_POINTS_CAP
+# there computes 0 challenges needed, which skips the race entirely and still
+# fires the challenge->buy transition — which assumes you already exited a
+# finished race, not that you're sitting paused in an undriven one. Capping
+# the input below the cap guarantees at least 1 challenge always runs first.
+_CHALLENGE_START_SP_CAP = 990
+
 # ── Timing constants (re-measured from a full 100-challenge cycle log,
 # 2026-07-20, post-tuning race flow — CHALLENGE_HOLD_SECONDS=27 + ease-in taps).
 # _SECS_TRANS_INIT has no fresh data (that run started from "buy", not "main")
@@ -128,7 +136,8 @@ class FarmTabMixin:
         self._sp_spin.setValue(0)
         self._sp_spin.setFixedWidth(80)
         sp_row.addWidget(self._sp_spin)
-        sp_row.addWidget(_small(f"0 – {config.SKILL_POINTS_CAP}"))
+        self._sp_range_lbl = _small(f"0 – {config.SKILL_POINTS_CAP}")
+        sp_row.addWidget(self._sp_range_lbl)
         sp_row.addStretch()
         opts.addLayout(sp_row)
 
@@ -288,6 +297,11 @@ class FarmTabMixin:
         self._challenge_only_hint.setVisible(is_challenge)
         if not is_challenge and self._challenge_only_chk.isChecked():
             self._challenge_only_chk.setChecked(False)
+
+        sp_cap = _CHALLENGE_START_SP_CAP if phase in ("main", "challenge") else config.SKILL_POINTS_CAP
+        self._sp_spin.setRange(0, sp_cap)
+        self._sp_range_lbl.setText(f"0 – {sp_cap}")
+
         if phase in ("main", "challenge"):
             for w in self._have_widgets:
                 w.setVisible(False)
@@ -511,7 +525,7 @@ class FarmTabMixin:
             if not car.car_collection_configured:
                 missing.append("Car Collection Row / Column")
             if not cfg.multiplier_car_configured:
-                missing.append('9x Multiplier Car Filter ("R class" / "Retro Rally" Row) and Position')
+                missing.append("9x Multiplier Car Filter (Performance Class / Car Type Row) and Position")
             if missing:
                 QMessageBox.warning(
                     self,

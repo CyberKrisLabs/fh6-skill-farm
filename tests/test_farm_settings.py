@@ -18,10 +18,11 @@ def test_default_settings_when_file_missing(tmp_path):
 def test_save_and_load_roundtrip(tmp_path):
     path = tmp_path / "settings.json"
     settings = farm_settings.load(path)  # defaults, file doesn't exist yet
-    settings.car.car_collection_col = 2
-    settings.car.car_collection_row = 64
-    settings.car.car_collection_configured = True
-    settings.challenge_share_code = "123456789"
+    car = settings.cars[settings.selected_car]  # mutable per-car user settings; settings.car is read-only
+    car.car_collection_col = 2
+    car.car_collection_row = 64
+    car.car_collection_configured = True
+    settings.filter_performance_class_row = 7
     settings.timings["MENU_WAIT"] = 0.77
 
     farm_settings.save(settings, path)
@@ -31,22 +32,43 @@ def test_save_and_load_roundtrip(tmp_path):
     assert reloaded.car.car_collection_col == 2
     assert reloaded.car.car_collection_row == 64
     assert reloaded.car.car_collection_configured is True
-    assert reloaded.challenge_share_code == "123456789"
+    assert reloaded.filter_performance_class_row == 7
     assert reloaded.timings["MENU_WAIT"] == 0.77
     # Untouched timing keys still fall back to the default
     assert reloaded.timings["NAV_WAIT"] == farm_settings.TIMING_DEFAULTS["NAV_WAIT"]
 
 
 def test_load_merges_partial_car_data(tmp_path):
-    """A saved car dict missing newer fields still merges over the built-in defaults."""
+    """A saved car dict only overrides user fields (car_collection_row); catalog
+    facts (name, price_cr) always come from CAR_CATALOG in code, never the file.
+    """
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"cars": {"lambo_revuelto": {"car_collection_row": 12}}}), encoding="utf-8")
 
     settings = farm_settings.load(path)
     assert settings.car.car_collection_row == 12
-    # Fields not present in the file keep their built-in defaults
     assert settings.car.name == "Lamborghini Revuelto"
     assert settings.car.price_cr == 346_750
+
+
+def test_load_ignores_catalog_fields_in_saved_car_data(tmp_path):
+    """Catalog facts stored in an old settings file (e.g. a stale sp_to_unlock)
+    never override CAR_CATALOG — only user fields are read back from the file.
+    """
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"cars": {"lambo_revuelto": {"sp_to_unlock": 999, "price_cr": 1}}}), encoding="utf-8")
+
+    settings = farm_settings.load(path)
+    assert settings.car.sp_to_unlock == farm_settings.CAR_CATALOG["lambo_revuelto"].sp_to_unlock
+    assert settings.car.price_cr == farm_settings.CAR_CATALOG["lambo_revuelto"].price_cr
+
+
+def test_load_skips_unknown_car(tmp_path):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"cars": {"some_removed_car": {"car_collection_row": 5}}}), encoding="utf-8")
+
+    settings = farm_settings.load(path)
+    assert "some_removed_car" not in settings.cars
 
 
 def test_load_falls_back_on_bad_json(tmp_path):

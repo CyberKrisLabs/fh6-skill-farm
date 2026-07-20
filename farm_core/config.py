@@ -34,36 +34,38 @@ LOADING_NON_PRELOADED_CAR_WAIT = 12
 LOADING_EXIT_TO_GAME_WAIT = 9  # Wait after escaping the car menu back into free roam
 
 # ── Configuration ──────────────────────────────────────────────────────────────
+# Fixed facts about the farming challenge itself — not user input (no Settings
+# tab control ever writes these), so they're hardcoded here rather than in
+# farm_settings.py, same reasoning as farm_settings.CAR_CATALOG.
 SKILL_POINTS_CAP = 999  # challenge farm target (game cap)
+CHALLENGE_SHARE_CODE = "661885885"  # share code for the challenge used to farm skill points
+POINTS_PER_CHALLENGE = 10  # points earned per run, with the 9x multiplier car active — verify in-game
 
 # Session logs (see orchestrator.run_farm) — same app-data directory as settings,
 # for the same reason: must survive past a PyInstaller temp-extraction dir.
 LOGS_DIR = farm_settings.APP_DATA_DIR / "logs"
 
-# User-editable settings: selected car (price, SP cost, Car Collection
-# position), challenge share code, points per challenge, multiplier-car position.
+# User-editable settings: selected car (Car Collection position), multiplier
+# car filter + position.
 CFG = farm_settings.load()
 
 # Derived economics — recomputed from CFG by refresh_config(); with Lambo
-# defaults: 24 cars, 346,750 CR each, 8,322,000 CR/cycle, 96 challenges/cycle.
+# defaults: 25 cars, 346,750 CR each, 8,668,750 CR/cycle, 98 challenges/cycle.
 NUM_CARS = 0
 CAR_PRICE_CR = 0
 TOTAL_COST_CR = 0
 SKILL_POINTS_PER_CAR = 0
-POINTS_PER_CHALLENGE = 0
 CHALLENGES_SUBSEQUENT = 0
 
 
 def refresh_config() -> None:
     """Recompute derived economics from CFG. Call after changing/saving settings."""
-    global NUM_CARS, CAR_PRICE_CR, TOTAL_COST_CR, SKILL_POINTS_PER_CAR
-    global POINTS_PER_CHALLENGE, CHALLENGES_SUBSEQUENT
+    global NUM_CARS, CAR_PRICE_CR, TOTAL_COST_CR, SKILL_POINTS_PER_CAR, CHALLENGES_SUBSEQUENT
     car = CFG.car
     SKILL_POINTS_PER_CAR = car.sp_to_unlock
     NUM_CARS = SKILL_POINTS_CAP // SKILL_POINTS_PER_CAR
     CAR_PRICE_CR = car.price_cr
     TOTAL_COST_CR = NUM_CARS * CAR_PRICE_CR
-    POINTS_PER_CHALLENGE = CFG.points_per_challenge
     points_used = NUM_CARS * SKILL_POINTS_PER_CAR
     carryover = SKILL_POINTS_CAP - points_used  # SP left after a full unlock cycle
     CHALLENGES_SUBSEQUENT = math.ceil((SKILL_POINTS_CAP - carryover) / POINTS_PER_CHALLENGE)

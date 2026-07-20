@@ -1,6 +1,6 @@
 """Phase: Challenge.
 
-Challenges are found by share-code search (config.CFG.challenge_share_code).
+Challenges are found by share-code search (config.CHALLENGE_SHARE_CODE).
 The 9x multiplier car must be the active car BEFORE joining — its skill-tree
 perks apply even though the challenge forces its own car while driving.
 
@@ -32,11 +32,11 @@ CHALLENGE_POLL_MARGIN = 3  # stop early polling this long before the final ~48s 
 # ⚠ TUNING: flooring W solid from the start overshoots an early jump (~5-10s
 # in). Ease in with a short hold, then a stutter of taps, before the main
 # hold below. Adjust these until the car clears the jump at a sane speed.
-CHALLENGE_START_HOLD_SECONDS = 1  # initial solid W hold
+CHALLENGE_START_HOLD_SECONDS = 2  # initial solid W hold
 CHALLENGE_START_TAP_HOLD = 1  # each stutter tap's hold duration
 CHALLENGE_START_TAP_PAUSE = 1  # released pause between stutter taps
 CHALLENGE_START_TAP_COUNT = 2  # number of stutter taps
-CHALLENGE_START_LAST_TAP_PAUSE = 1.5  # longer released pause after the final tap, before the main hold
+CHALLENGE_START_LAST_TAP_PAUSE = 1  # longer released pause after the final tap, before the main hold
 
 # FH6 bug: after certain mid-run restarts the car can spawn facing the wrong
 # way — throttle does nothing, and previously we'd only find out ~45s later
@@ -220,7 +220,7 @@ def _search_challenge() -> bool:
     keys.mp("backspace")
     keys.mp("up", wait=config.NAV_WAIT)
     keys.mp("enter")  # enter search / share code field
-    pyautogui.typewrite(config.CFG.challenge_share_code, interval=config.TYPING_WAIT)
+    pyautogui.typewrite(config.CHALLENGE_SHARE_CODE, interval=config.TYPING_WAIT)
     keys.mp("enter")
     keys.mp("down", wait=config.NAV_WAIT)
     keys.mp("enter")

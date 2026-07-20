@@ -24,7 +24,7 @@ def main():
             [
                 "Phases run in sequence from --start onward:",
                 "  main      → navigate from the main menu to challenge, then full flow",
-                f"  challenge → farm skill points via challenge (share code: {config.CFG.challenge_share_code})",
+                f"  challenge → farm skill points via challenge (share code: {config.CHALLENGE_SHARE_CODE})",
                 f"  buy       → buy {config.NUM_CARS} × {car.name} ({config.TOTAL_COST_CR:,} CR total)",
                 f"  unlock    → unlock the wheelspin skills on each car ({config.SKILL_POINTS_PER_CAR} pts/car, "
                 f"{car.super_wheelspins} SWS + {car.wheelspins} WS)",

@@ -7,12 +7,26 @@ two never drift out of sync.
 START_FROM_INFO: dict[str, tuple[str, str]] = {
     "main": (
         "Main Menu",
+        "IMPORTANT: before pressing Start, manually switch your active car to "
+        "the 9x multiplier car (configured in Settings). The tool only does "
+        "this itself at the end of a Remove phase, to set up the next cycle's "
+        "challenge — on this first race of a fresh session nothing has "
+        "switched it for you yet, so if you're not already driving it, this "
+        "run won't get the multiplier and your skill point math will be "
+        "off.\n\n"
         "In the game, while in a drivable state, press Escape to open the Main "
         'Menu. The tab should be on the first tab, "Campaign".\n\n'
         "The tool will navigate from there to the challenge.",
     ),
     "challenge": (
         "Challenge",
+        "IMPORTANT: before pressing Start, manually switch your active car to "
+        "the 9x multiplier car (configured in Settings). The tool only does "
+        "this itself at the end of a Remove phase, to set up the next cycle's "
+        "challenge — on this first race of a fresh session nothing has "
+        "switched it for you yet, so if you're not already driving it, this "
+        "run won't get the multiplier and your skill point math will be "
+        "off.\n\n"
         "The challenge starts driving immediately — there's no Enter press to "
         "kick it off — so you need to already be inside the challenge yourself "
         "before starting here. Enter it manually using the share code from the "
@@ -74,24 +88,29 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
     "multiplier_filter": (
         "9x Multiplier Car — Filter",
         "In the My Cars list, press Y to open Filter. It's one long "
-        'vertical checkbox list split into sections — "R" is under the '
-        'Performance Class section, "Retro Rally" is under the Car Type '
-        "section, further down.\n\n"
-        "These two rows tell the farm how far down that single-column list "
-        "each checkbox is, counted from the very top of the whole filter "
-        "list (both counted independently from the top, not relative to "
-        "each other).\n\n"
-        "Both boxes get checked to narrow My Cars down to the multiplier "
-        "car (the Subaru 22B) before finding its position — see the "
-        "Position section below.",
+        "vertical checkbox list split into sections — Performance Class is "
+        "one section, Car Type is another, further down.\n\n"
+        "Find your own 9x multiplier car's Performance Class and Car Type in "
+        "that list, and check both boxes. These two rows tell the farm how "
+        "far down that single-column list each checkbox is, counted from the "
+        "very top of the whole filter list (both counted independently from "
+        "the top, not relative to each other).\n\n"
+        "Example: a non-tuned (stock) Subaru 22B is Performance Class B, Car "
+        "Type Retro Rally. If yours is tuned into a different class, or "
+        "you're using a different multiplier car entirely, enter whichever "
+        "Performance Class and Car Type it actually falls under instead — "
+        "the multiplier isn't limited to one specific car or class.\n\n"
+        "Both boxes get checked to narrow My Cars down to just your "
+        "multiplier car before finding its position — see the Position "
+        "section below.",
     ),
     "multiplier_position": (
         "9x Multiplier Car — Position",
-        "After filtering My Cars to R class + Retro Rally car type, this is "
-        "where the multiplier car (the Subaru 22B) sits in the filtered "
-        "grid: Row 1–3 (3 rows per column), Column left to right.\n\n"
+        "After filtering My Cars to your configured Performance Class + Car "
+        "Type, this is where the multiplier car sits in the filtered grid: "
+        "Row 1–3 (3 rows per column), Column left to right.\n\n"
         "Important: when you work this out, make sure you're not currently "
-        "IN a car that's R performance class / Retro Rally car type — if "
+        "IN a car that matches that same Performance Class / Car Type — if "
         "you are, the order shown won't match the order the farm will "
         "actually see once it's running, and the position you record here "
         "will be wrong.",

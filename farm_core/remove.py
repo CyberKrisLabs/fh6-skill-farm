@@ -74,23 +74,28 @@ def _select_non_farm_car_as_active() -> None:
 def _switch_to_multiplier_car() -> None:
     """Switch active car to the 9x skill-multiplier car after the remove loop.
 
-    Opens the car filter list and checks both "R class" and "Retro Rally" —
-    it's a checkbox list, so enter toggles a box without closing it, and both
-    rows are counted as down presses from the TOP of the list (both absolute,
-    not relative to each other). The single escape afterward closes the filter
-    list and applies it. Then navigates the filtered "My Cars" grid (3 rows
-    per column, dynamic columns) to the configured car and selects it.
-    All four positions are user-specific — set in settings.
+    Opens the car filter list and checks the multiplier car's Performance
+    Class and Car Type (both configured in Settings — a stock Subaru 22B is
+    Performance Class B / Retro Rally, but the multiplier car and its class
+    aren't fixed to that one, so both are user-specific) — it's a checkbox
+    list, so enter toggles a box without closing it, and both rows are
+    counted as down presses from the TOP of the list (both absolute, not
+    relative to each other; Performance Class is always a section above Car
+    Type in the list, so its row is always the smaller of the two). The
+    single escape afterward closes the filter list and applies it. Then
+    navigates the filtered "My Cars" grid (3 rows per column, dynamic
+    columns) to the configured car and selects it. All four positions are
+    user-specific — set in settings.
     """
     keys.mp("y")
-    r_row = config.CFG.filter_r_class_row
-    rr_row = config.CFG.filter_retro_rally_row
-    if r_row:
-        keys.mp("down", r_row, config.NAV_WAIT)
-    keys.mp("enter")  # check "R class"
-    if rr_row > r_row:
-        keys.mp("down", rr_row - r_row, config.NAV_WAIT)
-    keys.mp("enter")  # check "Retro Rally"
+    perf_row = config.CFG.filter_performance_class_row
+    type_row = config.CFG.filter_car_type_row
+    if perf_row:
+        keys.mp("down", perf_row, config.NAV_WAIT)
+    keys.mp("enter")  # check performance class
+    if type_row > perf_row:
+        keys.mp("down", type_row - perf_row, config.NAV_WAIT)
+    keys.mp("enter")  # check car type
     keys.mp("escape", wait=config.MENU_WAIT)  # close filter list, apply
 
     if config.CFG.multiplier_car_col:

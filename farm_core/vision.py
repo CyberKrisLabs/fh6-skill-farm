@@ -149,6 +149,9 @@ def _read_available_sp() -> int | None:
     # WinRT OCR reads the right column (numbers) before the left column (labels),
     # so "360" appears BEFORE "AVAILABLE POINTS" in the token list.
     # The skill-point icon is misread as "0", giving: ... 360 0 AVAILABLE POINTS ...
+    # (sometimes there's no space and it fuses onto the number itself instead —
+    # "3600" as ONE token — handled below by stripping a trailing zero if the
+    # whole-token reading comes out over the 999 cap.)
     # Strategy: find "AVAILABLE", walk backwards skipping the icon "0", return next number.
     try:
         avail_idx = next(i for i, t in enumerate(tokens) if t == "AVAILABLE")
@@ -172,6 +175,12 @@ def _read_available_sp() -> int | None:
             if tokens[i].isdigit():
                 result = int(tokens[i])
                 break
+    if result is not None and not (0 <= result <= 999) and result % 10 == 0:
+        # Icon fused onto the number as a trailing zero instead of its own
+        # token (e.g. "8410" for 841) — strip it if that brings it in range.
+        stripped = result // 10
+        if 0 <= stripped <= 999:
+            result = stripped
     if result is not None and not (0 <= result <= 999):
         print(f"[WARN] SP OCR returned {result} — out of valid range (0–999), ignoring")
         return None
