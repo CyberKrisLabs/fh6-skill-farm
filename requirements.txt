@@ -1,0 +1,11 @@
+pyautogui
+pygetwindow
+PySide6
+opencv-python-headless
+numpy
+requests
+winrt-runtime
+winrt-Windows.Foundation
+winrt-Windows.Media.Ocr
+winrt-Windows.Graphics.Imaging
+winrt-Windows.Storage.Streams

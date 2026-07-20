@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $VERSION = "${{ github.ref_name }}".TrimStart("v")
+          echo "VERSION=$VERSION" >> $env:GITHUB_OUTPUT
+
+      - name: Build exe
+        run: pyinstaller "FH6 Skill Farm.spec"
+
+      - name: Patch installer version
+        shell: pwsh
+        run: |
+          $iss = Get-Content installer\installer.iss -Raw
+          $iss = $iss -replace '#define MyAppVersion "[^"]*"', '#define MyAppVersion "${{ steps.version.outputs.VERSION }}"'
+          Set-Content installer\installer.iss $iss
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\installer.iss
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FH6_Skill_Farm_Installer_v${{ steps.version.outputs.VERSION }}
+          path: installer/Output/FH6_Skill_Farm_Installer_v${{ steps.version.outputs.VERSION }}.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FH6 Skill Farm v${{ steps.version.outputs.VERSION }}
+          files: installer/Output/FH6_Skill_Farm_Installer_v${{ steps.version.outputs.VERSION }}.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

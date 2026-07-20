@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# PyInstaller
+build/
+dist/
+
+# Installer output
+installer/Output/
+
+# VS Code
+.vscode/
+
+# Claude Code local session data
+.claude/
+
+# Runtime settings/logs — these now live in %APPDATA%\FH6SkillFarm\, not the
+# repo, but ignore any that end up here anyway (e.g. a stray dev-mode fallback)
+skill_farm_settings.json
+logs/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
