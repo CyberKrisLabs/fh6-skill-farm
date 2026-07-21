@@ -23,6 +23,12 @@ NAV_WAIT = 0.05  # Shorter pause for up/down navigation presses
 PAGE_WAIT = 2  # pageup/pagedown need more time for tab transitions to register
 TYPING_WAIT = 0.2  # Pause between key presses when typing (share codes etc.)
 LOADING_AFTER_CHALLENGE_EXIT_WAIT = 18  # Wait after exiting a finished challenge (Continue)
+# Wait for the fast-travel loading screen from Free Roam into the House or
+# Festival site (whichever is unlocked, both land on the same menus) — the
+# farm navigates on to the Car Collection afterward. During the challenge->buy
+# transition. Varies more by PC than most loading waits (seen needing longer
+# on a slower PC), hence the higher default with margin built in.
+LOADING_TRAVEL_WAIT = 10
 LOADING_CHALLENGE_WAIT = 25  # Wait for challenge to load from Main Menu (longer than normal loading)
 LOADING_RETRY_WAIT = 25  # Wait after escape (retry challenge) until the next run is drivable
 LOADING_RESET_WAIT = 20  # Wait after a pause-menu restart (failed run recovery)
@@ -31,7 +37,7 @@ LOADING_RESET_WAIT = 20  # Wait after a pause-menu restart (failed run recovery)
 # away from the farm cars before removal has its own polling wait in
 # farm_core.remove, since there the outcome — loaded or not — isn't known up front.)
 LOADING_NON_PRELOADED_CAR_WAIT = 12
-LOADING_EXIT_TO_GAME_WAIT = 9  # Wait after escaping the car menu back into free roam
+LOADING_EXIT_TO_GAME_WAIT = 9  # Wait after escaping the car menu back into Free Roam
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 # Fixed facts about the farming challenge itself — not user input (no Settings
@@ -50,7 +56,8 @@ LOGS_DIR = farm_settings.APP_DATA_DIR / "logs"
 CFG = farm_settings.load()
 
 # Derived economics — recomputed from CFG by refresh_config(); with Lambo
-# defaults: 25 cars, 346,750 CR each, 8,668,750 CR/cycle, 98 challenges/cycle.
+# defaults (no Soko 78 discount): 25 cars, 365,000 CR each, 9,125,000 CR/cycle,
+# 98 challenges/cycle. (With the discount: 346,750 CR each, 8,668,750 CR/cycle.)
 NUM_CARS = 0
 CAR_PRICE_CR = 0
 TOTAL_COST_CR = 0
@@ -77,7 +84,7 @@ refresh_config()
 def refresh_timings() -> None:
     """Apply CFG.timings overrides onto the wait constants. Call after changing/saving settings."""
     global MENU_WAIT, NAV_WAIT, PAGE_WAIT, TYPING_WAIT
-    global LOADING_AFTER_CHALLENGE_EXIT_WAIT, LOADING_CHALLENGE_WAIT, LOADING_RETRY_WAIT
+    global LOADING_AFTER_CHALLENGE_EXIT_WAIT, LOADING_TRAVEL_WAIT, LOADING_CHALLENGE_WAIT, LOADING_RETRY_WAIT
     global LOADING_RESET_WAIT, LOADING_NON_PRELOADED_CAR_WAIT, LOADING_EXIT_TO_GAME_WAIT
     t = CFG.timings
     MENU_WAIT = t.get("MENU_WAIT", MENU_WAIT)
@@ -85,6 +92,7 @@ def refresh_timings() -> None:
     PAGE_WAIT = t.get("PAGE_WAIT", PAGE_WAIT)
     TYPING_WAIT = t.get("TYPING_WAIT", TYPING_WAIT)
     LOADING_AFTER_CHALLENGE_EXIT_WAIT = t.get("LOADING_AFTER_CHALLENGE_EXIT_WAIT", LOADING_AFTER_CHALLENGE_EXIT_WAIT)
+    LOADING_TRAVEL_WAIT = t.get("LOADING_TRAVEL_WAIT", LOADING_TRAVEL_WAIT)
     LOADING_CHALLENGE_WAIT = t.get("LOADING_CHALLENGE_WAIT", LOADING_CHALLENGE_WAIT)
     LOADING_RETRY_WAIT = t.get("LOADING_RETRY_WAIT", LOADING_RETRY_WAIT)
     LOADING_RESET_WAIT = t.get("LOADING_RESET_WAIT", LOADING_RESET_WAIT)
@@ -109,3 +117,12 @@ def _buffered(challenges: int) -> int:
     if not BUFFER_ENABLED:
         return challenges
     return challenges + _buffer_extra(challenges)
+
+
+def challenges_to_refill(cars_unlocked: int) -> int:
+    """Challenges needed to refill the skill points spent unlocking `cars_unlocked`
+    cars. CHALLENGES_SUBSEQUENT is this same formula for a full NUM_CARS-car
+    cycle — use this instead wherever the actual car count can be smaller (e.g.
+    a CR-limited partial cycle), or CHALLENGES_SUBSEQUENT will overshoot.
+    """
+    return math.ceil(cars_unlocked * SKILL_POINTS_PER_CAR / POINTS_PER_CHALLENGE)

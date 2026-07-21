@@ -61,6 +61,7 @@ class TimingsTabMixin:
         for key in (
             "LOADING_CHALLENGE_WAIT",
             "LOADING_AFTER_CHALLENGE_EXIT_WAIT",
+            "LOADING_TRAVEL_WAIT",
             "LOADING_RETRY_WAIT",
             "LOADING_RESET_WAIT",
         ):

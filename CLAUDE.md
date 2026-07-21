@@ -133,11 +133,40 @@ pytest --cov --cov-report=term-missing
   *after* a failure — a clean first run has never shown this bug — and skipped
   again immediately after a stuck-restart fires (confirmed to reliably fix the
   direction, so re-checking the very next run would be wasted time).
+  `vision._speed_digit_readable()` distinguishes a confirmed "moving normally"
+  reading (an actual digit was OCR'd) from an inconclusive one (OCR only
+  caught the unit label, e.g. "MPH", with no digit at all — observed in the
+  field on a PC set to MPH instead of KM/H) — the latter still proceeds as
+  not-stuck (no digit to restart on), but logs a distinct `[WARN]` instead of
+  claiming a confirmation that didn't happen. `STUCK_SPEED_THRESHOLD = 10` was
+  considered for MPH vs KM/H specifically: a genuinely-moving car clears 10 in
+  either unit well before the check fires (STUCK_CHECK_DELAY_SECONDS in), so
+  one threshold covers both — no unit-specific tuning needed.
+  **Open investigation:** on that same MPH PC, `_read_speedometer_text()` has
+  also read back completely empty (not even "MPH") — confirmed the HUD layout
+  is pixel-identical to the working KM/H PC, so this isn't a fixed-crop-region
+  bug. Suspect DPI-scaling or window-detection differences between the two
+  machines affecting `_get_fh6_window_region()`'s pixel math, or an occasional
+  bad OCR frame — not yet root-caused. Tightened the crop from bottom/right
+  30% to 20% (the speedometer sits right in the corner) since less
+  surrounding HUD/track clutter in frame can improve small-text OCR
+  reliability — an attempted mitigation, not a confirmed fix.
+  `vision._read_speedometer_text()` also now logs the computed crop region +
+  detected window bounds whenever OCR reads back nothing, specifically so the
+  next occurrence gives concrete numbers to diagnose from (the user prefers
+  describing/pasting logs over screenshots).
 - **Challenge end-screen ambiguity:** the two possible end screens (finished-on-time
   vs timed-out) have swapped Enter/Escape mappings. If OCR only catches "RETRY"
-  (common to both) without "CONTINUE" or "QUIT", the code assumes the failed/timed-out
-  layout and presses Enter — *not* the pause-menu fallback, whose first key
-  (Escape) would hit Quit on that screen instead of retrying.
+  (common to both) without "CONTINUE" or "QUIT" — **or catches none of the three
+  at all** — the code assumes the failed/timed-out layout and presses Enter,
+  never `_reset_challenge()`'s pause-menu sequence (Escape first). By the time
+  this check runs, the ~45s challenge timer has already elapsed, so some end
+  screen is almost certainly showing — `_reset_challenge()` is for the
+  *different*, still-mid-race stuck-start case (see below), and its first
+  press (Escape) would hit Quit on the actual end screen and exit the
+  challenge entirely instead of retrying (confirmed happening in the field —
+  don't reintroduce the `_reset_challenge()` call for the "OCR caught nothing"
+  case).
 - **Car Collection / multiplier-car position fields are 1-based in the UI, 0-based
   in storage**, and 0 is a *legitimate* real position (top-left / first row) — not
   a usable "unset" sentinel. Whether these are configured is tracked by explicit
@@ -147,6 +176,25 @@ pytest --cov --cov-report=term-missing
   dead stop clears it too fast. These constants are tuned per-account/track and
   are not exposed in the Timings tab (unlike the `LOADING_*`/`*_WAIT` constants,
   which are).
+- **Post-challenge "Rate Challenge?" prompt:** on the *final* run of the challenge
+  phase, FH6 shows a Like/Dislike/Cancel prompt after Continue-ing out — for
+  everyone except whoever's account owns `config.CHALLENGE_SHARE_CODE`. Handled
+  unconditionally (Down, Down, Enter → Cancel) in `run_challenge_iteration`'s
+  `final` branch, regardless of whether the prompt actually appears — on the
+  creator's own account the game is already in a loading screen by then, where
+  these presses are a harmless no-op. Don't gate this behind a setting.
+- **"What's Next" (HUD & Gameplay) extra screen:** if the user has that game
+  setting on, an extra Select/Back screen appears after the post-challenge
+  loading finishes, before Free Roam. This *is* gated — behind
+  `Settings.whats_next_enabled` (Settings tab checkbox, default off) — since
+  it's a per-user game setting the tool can't detect, and sending the extra
+  Escape when the screen never appears would misfire into whatever's next.
+  Backing out of it repeatedly can also trigger FH6's own "Change What's
+  Next?" nag (Yes / No / No, and don't ask me again) — handled the same way
+  as the Rate Challenge prompt (unconditional Down, Enter → "No", harmless
+  no-op if it never appears). Deliberately picks plain "No", not "don't ask
+  again" — the user has What's Next on *by choice*, so the nag should keep
+  coming back rather than the tool silently changing that game setting for them.
 
 ---
 

@@ -91,6 +91,10 @@ class GuideTabMixin:
             "type in.",
         )
 
+        title, text = SETTINGS_INFO["soko78"]
+        _add_section(root, title.upper())
+        _add_para(root, text)
+
         title, text = SETTINGS_INFO["car_collection"]
         _add_section(root, title.upper())
         _add_para(root, text)
@@ -104,6 +108,10 @@ class GuideTabMixin:
             "setting up the Challenge starting point (see the Starting Points "
             "guide tab).",
         )
+
+        title, text = SETTINGS_INFO["whats_next"]
+        _add_section(root, title.upper())
+        _add_para(root, text)
 
         title, text = SETTINGS_INFO["multiplier_filter"]
         _add_section(root, title.upper())

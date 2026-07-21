@@ -60,10 +60,21 @@ def mp(key, count=1, wait=None):
 
     wait defaults to the current config.MENU_WAIT — looked up at call time (not
     baked in as a stale default) so Timings changes take effect immediately.
+
+    Checks the stop event before every press, not just once per call — so a
+    single mp("down", 64, ...) (a real Car Collection row depth) bails
+    immediately mid-loop instead of finishing all 64 presses once Stop is
+    clicked. Since virtually every key press in this codebase goes through
+    mp()/_press_key() (see CLAUDE.md's Performance/Input Rules), this one
+    check is what makes Stop responsive across the many ad hoc, unguarded
+    transition functions elsewhere — once the stop event is set, every
+    subsequent mp() call anywhere becomes a no-op instead of pressing keys.
     """
     if wait is None:
         wait = config.MENU_WAIT
     for _ in range(count):
+        if _stop_event.is_set():
+            return
         _press_key(key)
         _sleep(wait)
 

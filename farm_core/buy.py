@@ -37,21 +37,36 @@ def transition_to_buy():
     Starting point: the final run_challenge_iteration pressed enter (Continue),
     exiting the challenge like the old race exit — same screen as before.
     End point: cursor on the configured farm car in the Car Collection, ready to start buy loop.
+
+    Mid-way, this fast-travels from Free Roam into the House or the Festival
+    site — whichever fast-travel destination the account has unlocked, both
+    land on the same menus — and waits for that loading screen to finish (see
+    config.LOADING_TRAVEL_WAIT) before navigating on to the Car Collection.
     """
     keys.mp("escape")
     keys._sleep(1)  # wait for menu to settle after escaping open world
+    if keys._stop_event.is_set():
+        return
     keys.mp("pagedown", 1, config.PAGE_WAIT)
     keys.mp("left", wait=config.NAV_WAIT)
     keys.mp("enter")
+    if keys._stop_event.is_set():
+        return
     keys._press_key("enter")
-    keys._sleep(7)  # menu settle
+    keys._sleep(config.LOADING_TRAVEL_WAIT)  # loading screen: Free Roam -> House/Festival site
+    if keys._stop_event.is_set():
+        return
     keys.mp("pageup", 1, config.PAGE_WAIT)
     keys.mp("down", wait=config.NAV_WAIT)
     keys.mp("enter")
     keys._sleep(1)  # menu settle
+    if keys._stop_event.is_set():
+        return
     keys.mp("right", wait=config.NAV_WAIT)
     keys.mp("enter")
     keys._sleep(0.5)  # menu settle
+    if keys._stop_event.is_set():
+        return
     keys.mp("down", wait=config.NAV_WAIT)
     keys.mp("enter")
     _navigate_car_collection_to_car()  # cursor now on the farm car — ready for buy loop

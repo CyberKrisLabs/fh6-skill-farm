@@ -52,6 +52,7 @@ TIMING_DEFAULTS: dict[str, float] = {
     "PAGE_WAIT": 2,
     "TYPING_WAIT": 0.2,
     "LOADING_AFTER_CHALLENGE_EXIT_WAIT": 18,
+    "LOADING_TRAVEL_WAIT": 10,
     "LOADING_CHALLENGE_WAIT": 25,
     "LOADING_RETRY_WAIT": 25,
     "LOADING_RESET_WAIT": 20,
@@ -72,7 +73,7 @@ class CarInfo:
 
     car_id: str  # keys UNLOCK_SEQUENCES in farm_core/unlock.py
     name: str
-    price_cr: int
+    price_cr: int  # base Autoshow price — full price, before the Soko 78 discount
     sp_to_unlock: int  # skill points spent to reach the wheelspin skills
     super_wheelspins: int  # yield per car
     wheelspins: int  # yield per car
@@ -82,12 +83,23 @@ CAR_CATALOG: dict[str, CarInfo] = {
     "lambo_revuelto": CarInfo(
         car_id="lambo_revuelto",
         name="Lamborghini Revuelto",
-        price_cr=346_750,
+        price_cr=365_000,
         sp_to_unlock=39,
         super_wheelspins=1,
         wheelspins=3,
     ),
 }
+
+# Owning the "Soko 78" house grants a 5% discount on Autoshow car prices.
+# Off by default — not every account owns it, and assuming it silently (as
+# CAR_CATALOG prices used to, baked in as if everyone had it) undercounts the
+# real cost for anyone who doesn't.
+SOKO78_DISCOUNT = 0.05
+
+
+def effective_price_cr(base_price_cr: int, soko78_house_owned: bool) -> int:
+    """Car price after the Soko 78 house's 5% Autoshow discount, if owned."""
+    return round(base_price_cr * (1 - SOKO78_DISCOUNT)) if soko78_house_owned else base_price_cr
 
 
 @dataclasses.dataclass
@@ -156,6 +168,17 @@ class Settings:
     # Settings tab — see CarConfig.car_collection_configured for why 0 can't
     # be used as an "unset" sentinel here either.
     multiplier_car_configured: bool
+    # Whether the user has FH6's "What's Next" (HUD & Gameplay settings) turned
+    # on. When it is, an extra Select/Back screen appears after exiting the
+    # challenge, before landing back in Free Roam — see
+    # farm_core.challenge.WHATS_NEXT_EXIT_WAIT. Genuinely per-user (depends on
+    # the player's own in-game settings), so it belongs here, not in code.
+    whats_next_enabled: bool
+    # Whether the account owns the "Soko 78" house — grants a 5% discount on
+    # Autoshow car prices (see CarInfo.price_cr / effective_price_cr above).
+    # Off by default: not every account owns it, so assuming it would
+    # undercount the real cost for anyone who doesn't.
+    soko78_house_owned: bool
     # User-editable wait constants (Timings tab) — see TIMING_DEFAULTS.
     timings: dict[str, float]
 
@@ -166,7 +189,7 @@ class Settings:
         return Car(
             car_id=info.car_id,
             name=info.name,
-            price_cr=info.price_cr,
+            price_cr=effective_price_cr(info.price_cr, self.soko78_house_owned),
             sp_to_unlock=info.sp_to_unlock,
             super_wheelspins=info.super_wheelspins,
             wheelspins=info.wheelspins,
@@ -194,6 +217,8 @@ def _default_settings() -> Settings:
         multiplier_car_col=0,
         multiplier_car_row=0,
         multiplier_car_configured=False,
+        whats_next_enabled=False,
+        soko78_house_owned=False,
         timings=dict(TIMING_DEFAULTS),
     )
 
@@ -229,6 +254,8 @@ def load(path: pathlib.Path = SETTINGS_PATH) -> Settings:
         "multiplier_car_col",
         "multiplier_car_row",
         "multiplier_car_configured",
+        "whats_next_enabled",
+        "soko78_house_owned",
     ):
         if field in data:
             setattr(settings, field, data[field])

@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -92,6 +93,13 @@ class SettingsTabMixin:
         self._set_price = _readonly_spin(99_999_999)
         _row(car_col, "Price (CR)", self._set_price)
 
+        self._set_soko78_chk = QCheckBox('"Soko 78" House Owned (5% Autoshow Discount)')
+        soko78_row = QHBoxLayout()
+        soko78_row.addWidget(self._set_soko78_chk)
+        soko78_row.addWidget(_info_button(self._show_soko78_info))
+        soko78_row.addStretch()
+        car_col.addLayout(soko78_row)
+
         self._set_sp = _readonly_spin(config.SKILL_POINTS_CAP)
         _row(car_col, "SP to Unlock", self._set_sp, "skill points per car")
 
@@ -119,6 +127,13 @@ class SettingsTabMixin:
         code_row.addWidget(self._copy_code_btn)
         code_row.addStretch()
         ch_col.addLayout(code_row)
+
+        self._set_whats_next_chk = QCheckBox('"What\'s Next" enabled (HUD & Gameplay)')
+        whats_next_row = QHBoxLayout()
+        whats_next_row.addWidget(self._set_whats_next_chk)
+        whats_next_row.addWidget(_info_button(self._show_whats_next_info))
+        whats_next_row.addStretch()
+        ch_col.addLayout(whats_next_row)
 
         vbox.addWidget(ch_box)
 
@@ -199,6 +214,7 @@ class SettingsTabMixin:
         vbox.addStretch()
 
         self._set_car_combo.currentIndexChanged.connect(lambda _i: self._load_car_fields())
+        self._set_soko78_chk.toggled.connect(lambda _checked: self._load_car_fields())
         self._settings_save_btn.clicked.connect(self._on_save_settings)
         self._copy_code_btn.clicked.connect(self._on_copy_share_code)
 
@@ -210,8 +226,11 @@ class SettingsTabMixin:
         idx = self._set_car_combo.findData(cfg.selected_car)
         if idx >= 0:
             self._set_car_combo.setCurrentIndex(idx)
+        # Set before _load_car_fields() so the Price preview reflects it on first load.
+        self._set_soko78_chk.setChecked(cfg.soko78_house_owned)
         self._load_car_fields()
         self._set_code.setText(config.CHALLENGE_SHARE_CODE)
+        self._set_whats_next_chk.setChecked(cfg.whats_next_enabled)
         self._set_filter_perf.setValue(cfg.filter_performance_class_row + 1)
         self._set_filter_type.setValue(cfg.filter_car_type_row + 1)
         self._set_mult_col.setValue(cfg.multiplier_car_col + 1)
@@ -224,7 +243,9 @@ class SettingsTabMixin:
             return
         info = farm_settings.CAR_CATALOG[car_id]
         user = config.CFG.cars[car_id]
-        self._set_price.setValue(info.price_cr)
+        # Live preview: reflects the checkbox's current (possibly unsaved) state,
+        # not just the last-saved cfg.soko78_house_owned.
+        self._set_price.setValue(farm_settings.effective_price_cr(info.price_cr, self._set_soko78_chk.isChecked()))
         self._set_sp.setValue(info.sp_to_unlock)
         self._set_sws.setValue(info.super_wheelspins)
         self._set_ws.setValue(info.wheelspins)
@@ -238,11 +259,17 @@ class SettingsTabMixin:
     def _show_car_collection_info(self) -> None:
         self._show_settings_info("car_collection")
 
+    def _show_soko78_info(self) -> None:
+        self._show_settings_info("soko78")
+
     def _show_multiplier_filter_info(self) -> None:
         self._show_settings_info("multiplier_filter")
 
     def _show_multiplier_position_info(self) -> None:
         self._show_settings_info("multiplier_position")
+
+    def _show_whats_next_info(self) -> None:
+        self._show_settings_info("whats_next")
 
     def _show_settings_info(self, key: str) -> None:
         title, text = SETTINGS_INFO[key]
@@ -269,6 +296,8 @@ class SettingsTabMixin:
         car.car_collection_row = self._set_shop_row.value() - 1
         car.car_collection_configured = True
         cfg.selected_car = car_id
+        cfg.whats_next_enabled = self._set_whats_next_chk.isChecked()
+        cfg.soko78_house_owned = self._set_soko78_chk.isChecked()
         cfg.filter_performance_class_row = self._set_filter_perf.value() - 1
         cfg.filter_car_type_row = self._set_filter_type.value() - 1
         cfg.multiplier_car_col = self._set_mult_col.value() - 1

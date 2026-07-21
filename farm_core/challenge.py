@@ -29,14 +29,44 @@ CHALLENGE_CHECK_DELAY = 12  # additional wait after release before the final che
 CHALLENGE_POLL_INTERVAL = 1  # early-finish poll cadence during CHALLENGE_CHECK_DELAY
 CHALLENGE_POLL_MARGIN = 3  # stop early polling this long before the final ~48s check (avoid racing it)
 
+# FH6 shows a "Rate Challenge?" (Like / Dislike / Cancel) prompt after
+# Continue-ing out of a challenge you didn't create yourself — i.e. for every
+# user of this tool except whoever's account owns config.CHALLENGE_SHARE_CODE.
+# Down, Down, Enter lands on Cancel regardless of which option was last
+# selected. Sent unconditionally on the final exit (not per-cycle-run) since
+# it's harmless when the prompt doesn't appear: on the creator's own account
+# the game is already past this into a loading screen by the time these fire,
+# where input is a no-op.
+RATE_CHALLENGE_PROMPT_WAIT = 1  # settle time before checking for the prompt
+
+# FH6's HUD & Gameplay "What's Next" setting (off by default, per-user —
+# see farm_settings.Settings.whats_next_enabled) shows an extra Select/Back
+# screen after the post-challenge loading finishes. Escape (Back) exits it to
+# Free Roam same as normal. Only sent if the user has flagged this on in
+# Settings — sending it when the screen never appears would misfire into
+# whatever's on screen next.
+WHATS_NEXT_EXIT_WAIT = 5  # settle time after backing out of the "What's Next" screen
+
+# Backing out of "What's Next" repeatedly without picking a suggested event
+# sometimes triggers a follow-up nag: "Change What's Next? You're often
+# returning to Free Roam without selecting a suggested Event. Would you like
+# to skip these prompts?" — Yes / No / No, and don't ask me again. Down once
+# (from the default Yes) + Enter selects plain "No": the user has What's Next
+# on by choice, so we keep asking (never "don't ask me again", which would
+# permanently change that game setting) without also picking Yes and
+# launching some random event. Sent unconditionally after the Back press,
+# same reasoning as RATE_CHALLENGE_PROMPT_WAIT above — harmless no-op if the
+# nag never appears, since the game's already past this into a loading screen.
+CHANGE_WHATS_NEXT_PROMPT_WAIT = 1  # settle time before checking for the nag prompt
+
 # ⚠ TUNING: flooring W solid from the start overshoots an early jump (~5-10s
 # in). Ease in with a short hold, then a stutter of taps, before the main
 # hold below. Adjust these until the car clears the jump at a sane speed.
-CHALLENGE_START_HOLD_SECONDS = 2  # initial solid W hold
+CHALLENGE_START_HOLD_SECONDS = 1.5  # initial solid W hold
 CHALLENGE_START_TAP_HOLD = 1  # each stutter tap's hold duration
 CHALLENGE_START_TAP_PAUSE = 1  # released pause between stutter taps
 CHALLENGE_START_TAP_COUNT = 2  # number of stutter taps
-CHALLENGE_START_LAST_TAP_PAUSE = 1  # longer released pause after the final tap, before the main hold
+CHALLENGE_START_LAST_TAP_PAUSE = 1.5  # longer released pause after the final tap, before the main hold
 
 # FH6 bug: after certain mid-run restarts the car can spawn facing the wrong
 # way — throttle does nothing, and previously we'd only find out ~45s later
@@ -62,10 +92,16 @@ def _reset_challenge() -> None:
     """Recover after a failed challenge run (car off-track / didn't finish)."""
     keys.mp("escape")
     keys._sleep(1)
+    if keys._stop_event.is_set():
+        return
     keys.mp("left", wait=config.NAV_WAIT)
     keys._sleep(config.MENU_WAIT)
+    if keys._stop_event.is_set():
+        return
     keys.mp("enter")
     keys._sleep(1)
+    if keys._stop_event.is_set():
+        return
     keys.mp("enter")
     keys._sleep(config.LOADING_RESET_WAIT)
 
@@ -76,7 +112,13 @@ def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_st
     final: on the last run of the phase, press enter (Continue) to exit the
     challenge once it finishes on time, instead of escape (Retry). A timed-out
     run is always retried regardless of `final`, so exit only ever happens via
-    Continue — never Quit (its post-exit screen isn't confirmed).
+    Continue — never Quit (its post-exit screen isn't confirmed). Also
+    dismisses the "Rate Challenge?" prompt (Like/Dislike/Cancel) that appears
+    for anyone other than the challenge's own creator, and — if
+    farm_settings.Settings.whats_next_enabled is set — backs out of FH6's
+    "What's Next" HUD & Gameplay screen too — and dismisses its own possible
+    follow-up "Change What's Next?" nag via No. See RATE_CHALLENGE_PROMPT_WAIT /
+    WHATS_NEXT_EXIT_WAIT / CHANGE_WHATS_NEXT_PROMPT_WAIT above.
     label: the "N/total" (or "N") text already printed for this run, echoed
     back in the finish/timeout log lines so they're identifiable.
     check_stuck_start: pass True when this run follows a failed one — polls the
@@ -119,12 +161,15 @@ def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_st
         if keys._stop_event.is_set():
             return False
         stuck = False
+        any_digit_read = False
         speed_text = ""
         for sample in range(STUCK_CHECK_POLL_COUNT):
             speed_text = vision._read_speedometer_text()
             if vision._is_speed_zero(speed_text):
                 stuck = True
                 break
+            if vision._speed_digit_readable(speed_text):
+                any_digit_read = True
             if sample < STUCK_CHECK_POLL_COUNT - 1:
                 keys._sleep(STUCK_CHECK_POLL_INTERVAL)
                 if keys._stop_event.is_set():
@@ -134,7 +179,13 @@ def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_st
             _reset_challenge()
             _last_run_was_stuck_restart = True
             return False
-        print(f"  [INFO] {tag} stuck-check: moving normally (speed read {speed_text!r})")
+        if any_digit_read:
+            print(f"  [INFO] {tag} stuck-check: moving normally (speed read {speed_text!r})")
+        else:
+            print(
+                f"  [WARN] {tag} stuck-check: never read a speed digit in {STUCK_CHECK_POLL_COUNT} "
+                f"samples (last read {speed_text!r}) — proceeding as not stuck, but this wasn't confirmed"
+            )
 
     pyautogui.keyDown("w")
     keys._sleep(CHALLENGE_HOLD_SECONDS)
@@ -181,18 +232,21 @@ def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_st
     timed_out = "QUIT" in text
     finished = "CONTINUE" in text
     if not timed_out and not finished:
+        # By this point CHALLENGE_HOLD_SECONDS + CHALLENGE_CHECK_DELAY (~39s)
+        # plus a 5s recheck have elapsed — the ~45s challenge timer has almost
+        # certainly already ended, so this is some end screen OCR just failed
+        # to read cleanly, not free-roam or a still-active race. Whether OCR
+        # caught "RETRY" alone or nothing at all, assume the failed/timed-out
+        # Retry(enter)/Quit(escape) layout and press Enter — NOT
+        # _reset_challenge()'s pause-menu sequence, whose first press
+        # (escape) would hit Quit on this screen and exit the challenge
+        # entirely instead of retrying (confirmed happening in the field).
         if "RETRY" in text:
-            # RETRY is common to both end screens; CONTINUE/QUIT distinguish
-            # them but weren't caught here. A failed run (crashed, didn't
-            # finish) shows the same Retry(enter)/Quit(escape) layout as a
-            # timeout, so assume that — NOT the pause menu, whose first press
-            # (escape) would hit Quit on this screen instead of restarting.
             print(f"  [WARN] {tag} end screen ambiguous (RETRY only) — assuming failed run, retrying")
-            keys._press_key("enter")  # Retry
-            keys._sleep(config.LOADING_RETRY_WAIT)
-            return False
-        print("  [WARN] End screen not detected — resetting")
-        _reset_challenge()
+        else:
+            print(f"  [WARN] {tag} end screen not detected at all — assuming failed run, retrying")
+        keys._press_key("enter")  # Retry
+        keys._sleep(config.LOADING_RETRY_WAIT)
         return False
 
     if timed_out:
@@ -206,7 +260,22 @@ def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_st
 
     if final:
         keys._press_key("enter")  # Continue — exit the challenge
+        keys._sleep(RATE_CHALLENGE_PROMPT_WAIT)
+        if keys._stop_event.is_set():
+            return False
+        keys.mp("down", 2, config.NAV_WAIT)  # navigate to Cancel (Like / Dislike / Cancel)
+        keys._press_key("enter")  # dismiss the "Rate Challenge?" prompt via Cancel
         keys._sleep(config.LOADING_AFTER_CHALLENGE_EXIT_WAIT)
+        if config.CFG.whats_next_enabled:
+            if keys._stop_event.is_set():
+                return False
+            keys._press_key("escape")  # Back — exit the "What's Next" HUD & Gameplay screen
+            keys._sleep(CHANGE_WHATS_NEXT_PROMPT_WAIT)
+            if keys._stop_event.is_set():
+                return False
+            keys.mp("down", wait=config.NAV_WAIT)  # navigate to "No" (only matters if the nag prompt appeared)
+            keys._press_key("enter")  # dismiss "Change What's Next?" via No
+            keys._sleep(WHATS_NEXT_EXIT_WAIT)
     else:
         keys._press_key("escape")  # Retry (on-time screen) — SP granted, reloads into the next run
         keys._sleep(config.LOADING_RETRY_WAIT)
@@ -241,6 +310,8 @@ def transition_to_challenge():
     End point: challenge countdown / ready to press enter to start.
     """
     keys._sleep(1)
+    if keys._stop_event.is_set():
+        return
     keys.mp("pageup", 2, config.PAGE_WAIT)  # navigate right to Creative Hub tab
     keys.mp("enter")  # open Creative Hub
     keys.mp("down", wait=config.NAV_WAIT)  # move to challenges entry

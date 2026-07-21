@@ -44,7 +44,10 @@ _ZERO_LOOKALIKES = str.maketrans({"O": "0", "o": "0", "Ö": "0", "ö": "0", "Q":
 # By STUCK_CHECK_DELAY_SECONDS in (see farm_core.challenge), a car that's
 # actually moving has cleared 10+ — so the tens digit is the reliable signal.
 # The units digit is noisy (observed misread "000" as "007"), so don't
-# require an exact 0 there.
+# require an exact 0 there. Considered whether this needs to differ for a
+# speedometer set to MPH instead of KM/H: it doesn't — a genuinely-moving car
+# clears 10 in either unit well before this check fires, so one threshold
+# covers both.
 STUCK_SPEED_THRESHOLD = 10
 
 
@@ -251,10 +254,12 @@ def _read_challenge_end_text() -> str:
 def _read_speedometer_text() -> str:
     """OCR the bottom-right corner of the game window (speedometer area).
 
-    Bottom 30% / right 30%, generous margins around the actual speedometer so
-    it's caught regardless of small window/HUD variance. Used to detect a
-    stuck, wrong-direction start (see farm_core.challenge.STUCK_CHECK_DELAY_SECONDS)
-    — speed reads "000" while the car isn't moving.
+    Bottom 20% / right 20% — tight around the speedometer, which sits right
+    in the corner. Tighter than SP/challenge-end crops on purpose: less
+    surrounding HUD/track clutter in frame improves small-text OCR reliability
+    for this particular reading. Used to detect a stuck, wrong-direction start
+    (see farm_core.challenge.STUCK_CHECK_DELAY_SECONDS) — speed reads "000"
+    while the car isn't moving.
     """
     if not _winrt_available():
         return ""
@@ -263,14 +268,22 @@ def _read_speedometer_text() -> str:
         pw, ph = pyautogui.size()
         win = (0, 0, pw, ph)
     wx, wy, ww, wh = win
-    top = int(wh * 0.70)  # bottom 30%
-    left = int(ww * 0.70)  # right 30%
-    img = pyautogui.screenshot(region=(wx + left, wy + top, ww - left, wh - top))
+    top = int(wh * 0.80)  # bottom 20%
+    left = int(ww * 0.80)  # right 20%
+    region = (wx + left, wy + top, ww - left, wh - top)
+    img = pyautogui.screenshot(region=region)
     try:
-        return asyncio.run(_winrt_ocr_async(img)).upper()
+        text = asyncio.run(_winrt_ocr_async(img)).upper()
     except Exception as exc:
         print(f"[WARN] OCR error (speed check): {exc}")
         return ""
+    if not text.strip():
+        # Diagnostic for the "reads nothing at all" case — printed instead of
+        # silently returning "", so the exact crop box and detected window
+        # bounds are in the log the next time this happens (no screenshot
+        # needed to debug it — see CLAUDE.md known-behaviors note).
+        print(f"[WARN] Speedometer OCR returned nothing — crop region {region}, window {win}")
+    return text
 
 
 def _is_speed_zero(text: str) -> bool:
@@ -280,3 +293,12 @@ def _is_speed_zero(text: str) -> bool:
         if normalized.isdigit() and int(normalized) < STUCK_SPEED_THRESHOLD:
             return True
     return False
+
+
+def _speed_digit_readable(text: str) -> bool:
+    """True if text contains an actual speed digit — as opposed to only the
+    unit label (e.g. "MPH"/"KM/H") with no number, which happens when OCR
+    misses the digits entirely. Used to tell a confirmed "moving normally"
+    reading apart from an inconclusive one that just defaulted to not-stuck.
+    """
+    return any(tok.translate(_ZERO_LOOKALIKES).isdigit() for tok in text.split())

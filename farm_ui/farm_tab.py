@@ -356,36 +356,77 @@ class FarmTabMixin:
         cr = self._cr_spin.value()
         parts: list[str] = []
 
-        def _cycle_tag(first_cost: int) -> str:
-            if cr <= 0:
-                return "↺ forever"
-            after = cr - first_cost
-            loops = (1 + after // config.TOTAL_COST_CR) if after >= 0 else 0
-            return f"↺ {loops} loop{'s' if loops != 1 else ''}  ({cr:,} CR)"
-
-        def _loops(first_cost: int) -> int | None:
-            """None = unlimited; int = total buy cycles including the first."""
-            if cr <= 0:
-                return None
-            after = cr - first_cost
-            return (1 + after // config.TOTAL_COST_CR) if after >= 0 else 0
-
         def _buf(challenges: int) -> int:
             if not self._buffer_chk.isChecked():
                 return challenges
             return challenges + config._buffer_extra(challenges)
 
-        sub_challenges = _buf(config.CHALLENGES_SUBSEQUENT)
-
         # ── time estimate helpers ───────────────────────────────────────────
-        def _time_main_challenge(init_secs: int, first_challenges: int, loops) -> str:
-            t1 = init_secs + first_challenges * _SECS_PER_CHALLENGE + _noncycle_secs(config.NUM_CARS)
-            if loops is None:
-                return f"~{_fmt_time(t1)}/cycle"
-            tn = _SECS_TRANS_CHALLENGE + sub_challenges * _SECS_PER_CHALLENGE + _noncycle_secs(config.NUM_CARS)
-            return f"~{_fmt_time(t1 + max(0, loops - 1) * tn)} total"
+        def _simulate_subsequent_cycles(first_buy_count: int, initial_last_unlock: int, first_subsequent_ci=None):
+            """Per-cycle (buy_count, challenge_count_before_it) for cycle 2
+            onward, mirroring orchestrator.py's cycle loop exactly: subsequent
+            cycles can be partial (not "a full NUM_CARS cycle or nothing" —
+            e.g. leftover CR after a full cycle still buys however many more
+            cars it affords), and each cycle's challenge phase is sized to
+            whatever the PREVIOUS cycle actually unlocked
+            (config.challenges_to_refill), not a fixed constant — EXCEPT the
+            very first subsequent cycle when starting from Buy/Unlock/Remove:
+            cycle 1 never runs a challenge phase there, so cycle 2's challenge
+            is the session's true first one (challenge_iters_first, passed in
+            as first_subsequent_ci), not a refill of an already-capped SP
+            total. first_buy_count is cycle 1's actual buy count (0 for
+            Unlock/Remove starts, which never buy in cycle 1) — used only to
+            compute CR spent; initial_last_unlock is cycle 1's actual unlock
+            count (matches orchestrator.py's own last_unlock_count seed) and
+            can differ from first_buy_count (e.g. Buy start's cars_have).
+            Returns (cycles, final_top_up); cr must be > 0 (caller handles
+            cr<=0).
+            """
+            cycles = []
+            remaining = cr - first_buy_count * config.CAR_PRICE_CR
+            last_unlock = initial_last_unlock
+            first_iteration = True
+            while remaining >= config.CAR_PRICE_CR:
+                if first_iteration and first_subsequent_ci is not None:
+                    ci = first_subsequent_ci
+                else:
+                    ci = _buf(config.challenges_to_refill(last_unlock))
+                first_iteration = False
+                n = min(remaining // config.CAR_PRICE_CR, config.NUM_CARS)
+                cycles.append((n, ci))
+                remaining -= n * config.CAR_PRICE_CR
+                last_unlock = n
+            final_top_up = _buf(config.challenges_to_refill(last_unlock))
+            return cycles, final_top_up
 
-        def _time_buy(to_buy: int, unlock_n: int, first_challenges: int, loops) -> str:
+        def _cycle_tag(first_buy_count: int, initial_last_unlock: int, first_subsequent_ci=None) -> str:
+            if cr <= 0:
+                return "↺ forever"
+            sim_cycles, _ = _simulate_subsequent_cycles(first_buy_count, initial_last_unlock, first_subsequent_ci)
+            # Only count cycle 1 as a "loop" if it actually buys something —
+            # Unlock/Remove starts never buy in cycle 1 (first_buy_count is
+            # always 0 there), and an explicit "Buy 0" skip shouldn't count
+            # as a loop either.
+            loops = (1 if first_buy_count > 0 else 0) + len(sim_cycles)
+            return f"↺ {loops} loop{'s' if loops != 1 else ''}  ({cr:,} CR)"
+
+        def _time_main_challenge(init_secs: int, first_challenges: int, first_buy_count: int) -> str:
+            t1 = init_secs + first_challenges * _SECS_PER_CHALLENGE + _noncycle_secs(first_buy_count)
+            if cr <= 0:
+                return f"~{_fmt_time(t1)}/cycle"
+            sim_cycles, final_top_up = _simulate_subsequent_cycles(first_buy_count, first_buy_count)
+            t = t1
+            for n, ci in sim_cycles:
+                t += _SECS_TRANS_CHALLENGE + ci * _SECS_PER_CHALLENGE + _noncycle_secs(n)
+            # CR always runs out eventually here — once the last affordable
+            # buy/unlock/remove cycle finishes, the farm runs one more
+            # challenge-only top-up to cap skill points before stopping
+            # (orchestrator.py's "CR exhausted" branch), sized to whatever SP
+            # that last cycle's unlock actually spent.
+            t += _SECS_TRANS_CHALLENGE + final_top_up * _SECS_PER_CHALLENGE
+            return f"~{_fmt_time(t)} total"
+
+        def _time_buy(to_buy: int, unlock_n: int, first_challenges: int) -> str:
             t_partial = int(
                 to_buy * _SECS_PER_BUY
                 + _SECS_TRANS_UNLOCK
@@ -393,33 +434,41 @@ class FarmTabMixin:
                 + _SECS_REMOVE_FIXED
                 + unlock_n * _SECS_PER_REMOVE
             )
-            if loops is None:
-                tn = _SECS_TRANS_CHALLENGE + sub_challenges * _SECS_PER_CHALLENGE + _noncycle_secs(config.NUM_CARS)
-                return f"~{_fmt_time(t_partial)}, then ~{_fmt_time(tn)}/cycle"
-            t = t_partial
-            if loops >= 2:
-                t += (
+            if cr <= 0:
+                tn = (
                     _SECS_TRANS_CHALLENGE
-                    + int(first_challenges * _SECS_PER_CHALLENGE)
+                    + _buf(config.CHALLENGES_SUBSEQUENT) * _SECS_PER_CHALLENGE
                     + _noncycle_secs(config.NUM_CARS)
                 )
-            if loops > 2:
-                tn = _SECS_TRANS_CHALLENGE + int(sub_challenges * _SECS_PER_CHALLENGE) + _noncycle_secs(config.NUM_CARS)
-                t += (loops - 2) * tn
+                return f"~{_fmt_time(t_partial)}, then ~{_fmt_time(tn)}/cycle"
+            sim_cycles, final_top_up = _simulate_subsequent_cycles(
+                to_buy, unlock_n, first_subsequent_ci=first_challenges
+            )
+            t = t_partial
+            for n, ci in sim_cycles:
+                t += _SECS_TRANS_CHALLENGE + ci * _SECS_PER_CHALLENGE + _noncycle_secs(n)
+            t += _SECS_TRANS_CHALLENGE + final_top_up * _SECS_PER_CHALLENGE
             return f"~{_fmt_time(t)} total"
 
-        def _time_unlock_remove(phase: str, n: int, first_challenges: int, loops) -> str:
+        def _time_unlock_remove(phase: str, n: int, first_challenges: int) -> str:
             if phase == "unlock":
                 t_partial = int(n * _SECS_PER_UNLOCK + _SECS_REMOVE_FIXED + n * _SECS_PER_REMOVE)
             else:
                 t_partial = int(_SECS_REMOVE_FIXED + n * _SECS_PER_REMOVE)
-            if loops is None:
-                tn = _SECS_TRANS_CHALLENGE + sub_challenges * _SECS_PER_CHALLENGE + _noncycle_secs(config.NUM_CARS)
+            if cr <= 0:
+                tn = (
+                    _SECS_TRANS_CHALLENGE
+                    + _buf(config.CHALLENGES_SUBSEQUENT) * _SECS_PER_CHALLENGE
+                    + _noncycle_secs(config.NUM_CARS)
+                )
                 return f"~{_fmt_time(t_partial + first_challenges * _SECS_PER_CHALLENGE)}, then ~{_fmt_time(tn)}/cycle"
+            # Unlock/Remove starts never buy in cycle 1 (first_buy_count=0);
+            # initial_last_unlock=n matches orchestrator.py's own seed.
+            sim_cycles, final_top_up = _simulate_subsequent_cycles(0, n, first_subsequent_ci=first_challenges)
             t = t_partial + int(first_challenges * _SECS_PER_CHALLENGE)
-            if loops >= 2:
-                tn = _SECS_TRANS_CHALLENGE + int(sub_challenges * _SECS_PER_CHALLENGE) + _noncycle_secs(config.NUM_CARS)
-                t += loops * tn  # each loop: trans+challenge+buy+unlock+remove
+            for cn, ci in sim_cycles:
+                t += _SECS_TRANS_CHALLENGE + ci * _SECS_PER_CHALLENGE + _noncycle_secs(cn)
+            t += _SECS_TRANS_CHALLENGE + final_top_up * _SECS_PER_CHALLENGE
             return f"~{_fmt_time(t)} total"
 
         # ── per-phase summary + time ────────────────────────────────────────
@@ -445,15 +494,20 @@ class FarmTabMixin:
                 parts.append(_challenge_lbl(base, challenges - base))
                 parts.append(f"~{_fmt_time(init_secs + challenges * _SECS_PER_CHALLENGE)} total")
             else:
-                n_loops = _loops(config.TOTAL_COST_CR)
+                # By the time Buy runs, the preceding challenge phase has
+                # already capped skill points, so CR — not SP — is what
+                # actually limits the first buy. Mirrors orchestrator.py's
+                # _run_farm_inner "else: # challenge" branch exactly.
+                buy_count = min(cr // config.CAR_PRICE_CR, config.NUM_CARS) if cr > 0 else config.NUM_CARS
+                first_cost = buy_count * config.CAR_PRICE_CR
                 parts += [
                     _challenge_lbl(base, challenges - base),
-                    f"Buy {config.NUM_CARS} ({config.TOTAL_COST_CR:,} CR)",
-                    f"Unlock {config.NUM_CARS}",
-                    f"Remove {config.NUM_CARS}",
+                    f"Buy {buy_count} ({first_cost:,} CR)",
+                    f"Unlock {buy_count}",
+                    f"Remove {buy_count}",
                 ]
-                parts.append(_cycle_tag(config.TOTAL_COST_CR))
-                parts.append(_time_main_challenge(init_secs, challenges, n_loops))
+                parts.append(_cycle_tag(buy_count, buy_count))
+                parts.append(_time_main_challenge(init_secs, challenges, buy_count))
 
         elif phase == "buy":
             to_buy = self._cars_spin.value()
@@ -461,7 +515,6 @@ class FarmTabMixin:
             max_unlockable = sp // config.SKILL_POINTS_PER_CAR if sp > 0 else config.NUM_CARS
             unlock_count = min(to_buy + have, config.NUM_CARS, max_unlockable)
             sp_remaining = sp - unlock_count * config.SKILL_POINTS_PER_CAR
-            n_loops = _loops(to_buy * config.CAR_PRICE_CR)
             if to_buy == 0:
                 parts.append("Buy 0  (skip)")
             else:
@@ -477,8 +530,8 @@ class FarmTabMixin:
                 )
             else:
                 first_challenges = _buf(math.ceil(config.SKILL_POINTS_CAP / config.POINTS_PER_CHALLENGE))
-                parts.append(_cycle_tag(to_buy * config.CAR_PRICE_CR))
-            parts.append(_time_buy(to_buy, unlock_count, first_challenges, n_loops))
+                parts.append(_cycle_tag(to_buy, unlock_count, first_subsequent_ci=first_challenges))
+            parts.append(_time_buy(to_buy, unlock_count, first_challenges))
 
         elif phase in ("unlock", "remove"):
             n = self._cars_spin.value()
@@ -503,9 +556,8 @@ class FarmTabMixin:
                 challenge_tag = (
                     f"challenge {base_c}{_buf_suffix(first_challenges - base_c)} = {first_challenges}× first"
                 )
-            n_loops = _loops(config.TOTAL_COST_CR)
-            parts.append(challenge_tag + "  →  " + _cycle_tag(config.TOTAL_COST_CR))
-            parts.append(_time_unlock_remove(phase, n, first_challenges, n_loops))
+            parts.append(challenge_tag + "  →  " + _cycle_tag(0, n, first_subsequent_ci=first_challenges))
+            parts.append(_time_unlock_remove(phase, n, first_challenges))
 
         self._summary.setText("  →  ".join(parts))
 

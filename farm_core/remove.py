@@ -36,6 +36,8 @@ def _select_non_farm_car_as_active() -> None:
     """
     print("  [Safety] Switching to a non-farm car to avoid trying to remove an active car")
     keys._sleep(1)
+    if keys._stop_event.is_set():
+        return
     keys.mp("right", wait=config.NAV_WAIT)
     keys.mp("enter")
     keys.mp("enter")

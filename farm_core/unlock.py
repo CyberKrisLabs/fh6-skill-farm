@@ -73,6 +73,8 @@ def transition_to_unlock():
     """
     keys.mp("escape", 3)
     keys._sleep(1)  # wait for menu to settle after escaping Car Collection
+    if keys._stop_event.is_set():
+        return
     keys.mp("pagedown", 2, config.PAGE_WAIT)
     keys.mp("enter")
 
@@ -84,6 +86,8 @@ def _open_cars_sorted_by_recent():
     button there, not a generic key.
     """
     keys._sleep(1)
+    if keys._stop_event.is_set():
+        return
     keys.mp("x")  # Sort button (My Cars list)
     keys.mp("down", 6, config.NAV_WAIT)  # navigate to sort option
     keys.mp("enter")  # Selects "Recently Added"
@@ -98,9 +102,18 @@ def _open_cars_for_unlock_resume():
     button there, not a generic key.
     """
     keys._sleep(1)
+    if keys._stop_event.is_set():
+        return
     keys.mp("x")  # Sort button (My Cars list)
     keys.mp("down", 6, config.NAV_WAIT)  # Move down to "Recently Added" sort option
     keys.mp("enter")  # Selects "Recently Added"
+
+
+# A single OCR read can misread a bad frame and miss the available-SP text
+# entirely (same reasoning as challenge.STUCK_CHECK_POLL_COUNT) — retry a
+# few times before giving up and proceeding without the SP-based correction.
+SP_CHECK_POLL_COUNT = 3
+SP_CHECK_POLL_INTERVAL = 1
 
 
 def run_unlock_iteration(iteration, expected_cars: int | None = None) -> tuple[int | None, int | None]:
@@ -111,10 +124,14 @@ def run_unlock_iteration(iteration, expected_cars: int | None = None) -> tuple[i
     """
     if iteration == 1:
         _open_cars_sorted_by_recent()
+        if keys._stop_event.is_set():
+            return None, None
         # Selection is already on Car1 after sort — just select it
         keys._press_key("enter")
     else:
         _open_cars_for_unlock_resume()
+        if keys._stop_event.is_set():
+            return None, None
         # Navigate relative to previous car. Row cycles 0→1→2→0→1→2...
         # prev_row is the row we were on after the last iteration.
         prev_row = (iteration - 2) % 3
@@ -135,7 +152,14 @@ def run_unlock_iteration(iteration, expected_cars: int | None = None) -> tuple[i
     adjusted_effective: int | None = None
     detected_sp: int | None = None
     if iteration == 1 and expected_cars is not None:
-        detected_sp = vision._read_available_sp()
+        for attempt in range(SP_CHECK_POLL_COUNT):
+            detected_sp = vision._read_available_sp()
+            if detected_sp is not None:
+                break
+            if attempt < SP_CHECK_POLL_COUNT - 1:
+                keys._sleep(SP_CHECK_POLL_INTERVAL)
+                if keys._stop_event.is_set():
+                    return None, None
         if detected_sp is not None:
             can_unlock = detected_sp // config.SKILL_POINTS_PER_CAR
             expected_sp_val = expected_cars * config.SKILL_POINTS_PER_CAR
@@ -165,7 +189,10 @@ def run_unlock_iteration(iteration, expected_cars: int | None = None) -> tuple[i
                     f"next challenge phase: {base_adj}{_buf_txt} = {new_challenges} challenges (was {std_challenges})"
                 )
         else:
-            print("  [SP CHECK] Could not read skill points from screen — proceeding as planned")
+            print(
+                f"  [SP CHECK] Could not read skill points from screen after {SP_CHECK_POLL_COUNT} "
+                "attempts — proceeding as planned"
+            )
 
     keys._run_key_sequence(UNLOCK_SEQUENCES[config.CFG.selected_car])  # car-specific tree walk
     keys._run_key_sequence(EXIT_TO_CAR_LIST)

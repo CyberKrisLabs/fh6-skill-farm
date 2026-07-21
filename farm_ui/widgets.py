@@ -5,8 +5,20 @@ from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QSpinBox
 
 
+def _is_subsequence(sub: str, full: str) -> bool:
+    """True if sub's characters appear in full, in order (not necessarily contiguous) —
+    i.e. sub is reachable by deleting characters out of full without reordering it.
+    """
+    it = iter(full)
+    return all(ch in it for ch in sub)
+
+
 class _CRSpinBox(QSpinBox):
     """QSpinBox that displays values with thousands separators; 0 shows as 'unlimited'."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.lineEdit().textEdited.connect(self._reformat_live)
 
     def textFromValue(self, value: int) -> str:
         return "unlimited" if value == 0 else f"{value:,}"
@@ -21,7 +33,35 @@ class _CRSpinBox(QSpinBox):
             return (QValidator.State.Acceptable, text, pos)
         if any(c.isdigit() or c == "," for c in text):
             return (QValidator.State.Acceptable, text, pos)
+        if _is_subsequence(text, "unlimited"):
+            # A partial deletion of "unlimited" mid-backspace (e.g. "unlimite") —
+            # not a final value, but a valid step toward one (clearing down to "").
+            return (QValidator.State.Intermediate, text, pos)
         return (QValidator.State.Invalid, text, pos)
+
+    def _reformat_live(self, text: str) -> None:
+        """Insert thousand separators as the user types, instead of only on
+        focus-out — so "1000000" reads as "1,000,000" immediately. Keeps the
+        cursor anchored to the same digit (not the text end) as separators shift.
+        """
+        digits = "".join(c for c in text if c.isdigit())
+        if not digits:
+            return
+        formatted = f"{int(digits):,}"
+        if formatted == text:
+            return
+        edit = self.lineEdit()
+        digits_before_cursor = sum(c.isdigit() for c in text[: edit.cursorPosition()])
+        new_pos = len(formatted)
+        seen = 0
+        for i, ch in enumerate(formatted):
+            if ch.isdigit():
+                seen += 1
+                if seen == digits_before_cursor:
+                    new_pos = i + 1
+                    break
+        edit.setText(formatted)
+        edit.setCursorPosition(new_pos)
 
 
 # ── Log bridge (thread-safe print → Qt signal) ─────────────────────────────────

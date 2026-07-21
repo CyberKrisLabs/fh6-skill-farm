@@ -23,12 +23,17 @@ configured farm car — no manual repetition required.
 > stuck," so a wrong-direction start won't be caught early and the farm waits
 > out the full challenge timer instead of restarting immediately.
 
+> **Transmission must be set to Automatic for the challenge.** The ease-in
+> throttle sequence and hold timings are tuned for automatic shifting — manual
+> transmission changes acceleration behavior enough to throw off the tuned
+> timings.
+
 ```bash
 pip install -r requirements.txt
 python skill_farm_ui.py
 ```
 
-1. Launch FH6 and get to a drivable state (in-car, on the map)
+1. Launch FH6 and get to Free Roam (in-car, on the map)
 2. Open FH6 Skill Farm and fill in the Settings tab: farm car, Car Collection
    Row/Column, share code, and the 9x multiplier car filter + position
 3. Pick a "Start From" point on the Farm tab and enter your current Skill Points

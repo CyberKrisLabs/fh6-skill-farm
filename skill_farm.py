@@ -4,14 +4,16 @@
 # Game changes 2026-07-13 (Playground patch):
 #   - Subaru 22B raised to 300k+ CR and events nerfed to max 1 skill point per
 #     race — the old Eventlab farm is dead.
-#   - New farm car: Lamborghini (346,750 CR, 39 SP to unlock 1 Super Wheelspin
+#   - New farm car: Lamborghini (365,000 CR, or 346,750 CR with the "Soko 78"
+#     house's 5% Autoshow discount, 39 SP to unlock 1 Super Wheelspin
 #     + 3 Wheelspins per car).
 #   - Skill points are now farmed via CHALLENGES (share-code search, like
 #     Eventlab before). The challenge forces a specific car while driving, but
 #     the skill-tree perks of the car you sit in BEFORE joining still apply —
 #     so the 9x skill-point multiplier car must be active when entering.
 #
-# Economics (Lambo defaults): 25 cars × 346,750 CR = 8,668,750 CR per cycle.
+# Economics (Lambo defaults, no Soko 78 discount): 25 cars × 365,000 CR =
+#   9,125,000 CR per cycle (8,668,750 CR with the discount).
 #   999 SP cap ÷ 39 SP/car = 25 cars, 975 SP used, 24 SP carry over.
 #   ~10 SP per challenge → 98 challenges per subsequent cycle.
 #   Car price / SP / positions are user-editable: skill_farm_settings.json

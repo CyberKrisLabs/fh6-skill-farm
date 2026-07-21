@@ -14,7 +14,11 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "switched it for you yet, so if you're not already driving it, this "
         "run won't get the multiplier and your skill point math will be "
         "off.\n\n"
-        "In the game, while in a drivable state, press Escape to open the Main "
+        "Also make sure Transmission is set to Automatic — the ease-in "
+        "throttle sequence and hold timings are tuned for automatic "
+        "shifting, and manual changes acceleration behavior enough to throw "
+        "them off.\n\n"
+        "In the game, while in Free Roam, press Escape to open the Main "
         'Menu. The tab should be on the first tab, "Campaign".\n\n'
         "The tool will navigate from there to the challenge.",
     ),
@@ -27,6 +31,10 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "switched it for you yet, so if you're not already driving it, this "
         "run won't get the multiplier and your skill point math will be "
         "off.\n\n"
+        "Also make sure Transmission is set to Automatic — the ease-in "
+        "throttle sequence and hold timings are tuned for automatic "
+        "shifting, and manual changes acceleration behavior enough to throw "
+        "them off.\n\n"
         "The challenge starts driving immediately — there's no Enter press to "
         "kick it off — so you need to already be inside the challenge yourself "
         "before starting here. Enter it manually using the share code from the "
@@ -84,6 +92,32 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "Required before starting the farm, unless Challenge Only is ticked "
         "on the Farm tab — that mode never buys/unlocks/removes cars, so "
         "this position is never used.",
+    ),
+    "soko78": (
+        '"Soko 78" House Owned',
+        "Owning the Soko 78 house in-game grants a 5% discount on Autoshow "
+        "car prices. Tick this if your account owns it — the Price (CR) "
+        "field above, and all cost/CR-affordability math in the farm, will "
+        "use the discounted price instead of the full Autoshow price.\n\n"
+        "Off by default: not every account owns this house, and assuming "
+        "the discount when you don't would undercount the real cost, "
+        "potentially causing the farm to attempt buying more cars than your "
+        "CR can actually afford.",
+    ),
+    "whats_next": (
+        '"What\'s Next" (HUD & Gameplay)',
+        "FH6's HUD & Gameplay settings has a \"What's Next\" option that, when "
+        "turned on, shows an extra screen after finishing an activity — a "
+        "Select (Enter, picks a proposed activity) / Back (Escape, exits to "
+        "Free Roam) choice — instead of dropping you straight into Free Roam "
+        "like normal.\n\n"
+        "Tick this box if you have that setting turned on in your own game. "
+        "The farm will send an extra Escape (Back) and wait a few seconds "
+        "after exiting the challenge to get past that screen before "
+        "continuing to Buy.\n\n"
+        "Leave it unticked if you don't have \"What's Next\" enabled — sending "
+        "that extra Escape when the screen never appears would misfire into "
+        "whatever's on screen next instead.",
     ),
     "multiplier_filter": (
         "9x Multiplier Car — Filter",
@@ -171,6 +205,18 @@ TIMING_INFO: dict[str, tuple[str, str]] = {
         "Raise it if the farm starts pressing keys before you're actually back "
         "at a menu after finishing the last challenge of a cycle.",
     ),
+    "LOADING_TRAVEL_WAIT": (
+        "Loading Travel Wait",
+        "The wait (in seconds) for the fast-travel loading screen from Free "
+        "Roam into the House or the Festival site — whichever fast-travel "
+        "destination your account has unlocked (both land on the same menus "
+        "afterward, so it doesn't matter which) — during the challenge → buy "
+        "transition. The farm navigates on to the Car Collection afterward, "
+        "once this loading screen has finished.\n\n"
+        "This varies more by PC than most loading waits. Raise it if the farm "
+        "starts navigating menus before the destination has actually finished "
+        "loading.",
+    ),
     "LOADING_RETRY_WAIT": (
         "Loading Retry Wait",
         "The wait (in seconds) after pressing Retry — whether the run finished "
@@ -200,8 +246,8 @@ TIMING_INFO: dict[str, tuple[str, str]] = {
     "LOADING_EXIT_TO_GAME_WAIT": (
         "Loading Exit To Game Wait",
         "The wait (in seconds), during the Remove phase, after escaping the car "
-        "menu back into free roam, before navigating to the main menu.\n\n"
+        "menu back into Free Roam, before navigating to the main menu.\n\n"
         "How long this takes can vary by PC. Raise it if the farm tries to open "
-        "the main menu before you're actually back in free roam.",
+        "the main menu before you're actually back in Free Roam.",
     ),
 }

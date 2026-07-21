@@ -252,8 +252,13 @@ def _run_farm_inner(
         unlock_count = min(buy_count + cars_have, config.NUM_CARS, max_unlockable)
         sp_before_race = skill_points - unlock_count * config.SKILL_POINTS_PER_CAR
     else:  # challenge
-        buy_count = config.NUM_CARS
-        unlock_count = config.NUM_CARS
+        # By the time Buy runs, the preceding challenge phase has already
+        # capped skill points (~999), so SP is never the binding constraint
+        # here — CR is. Without this, the first buy always attempted the
+        # full NUM_CARS regardless of affordability (0 = unlimited CR keeps
+        # the full count).
+        buy_count = min(cr // config.CAR_PRICE_CR, config.NUM_CARS) if cr > 0 else config.NUM_CARS
+        unlock_count = buy_count
         sp_before_race = skill_points
 
     # First-challenge count adjusted for SP actually remaining after unlock
@@ -264,12 +269,14 @@ def _run_farm_inner(
             math.ceil((config.SKILL_POINTS_CAP - sp_before_race) / config.POINTS_PER_CHALLENGE)
         )
 
-    # CR-based buy-run limit (0 = unlimited)
-    if cr > 0:
-        after_first = cr - buy_count * config.CAR_PRICE_CR
-        max_buy_runs = (1 + after_first // config.TOTAL_COST_CR) if after_first >= 0 else 0
-    else:
-        max_buy_runs = None
+    # CR remaining, updated after every cycle's buy (0 = unlimited, tracked as
+    # None) — including cycle 1's, subtracted once below by the loop's own
+    # post-cycle bookkeeping, not pre-subtracted here too. Each subsequent
+    # cycle spends whatever of this is left, capped at NUM_CARS — not "a full
+    # NUM_CARS-cycle's cost or nothing" — so e.g. 18M CR after a 9.1M-CR first
+    # cycle still buys another ~24 cars on cycle 2, instead of stopping just
+    # because a second *full* 25-car cycle (9.1M+) doesn't fit.
+    remaining_cr = cr if cr > 0 else None
 
     args = types.SimpleNamespace(skill_points=skill_points, cars=cars, cycle=cycle)
 
@@ -280,26 +287,40 @@ def _run_farm_inner(
         cyc = 0
         first_challenge = True
         is_first_action = True
-        buy_runs_done = 0
         _override_challenge_iters = None  # set by unlock OCR when challenges haven't run yet
+        # Cars actually unlocked in the most recently completed cycle — used to
+        # size the NEXT challenge phase's refill target (see challenges_to_refill).
+        # Starts at unlock_count (cycle 1's planned count) since cycle 1 always
+        # runs before any "else" branch can be reached.
+        last_unlock_count = unlock_count
 
         while not keys._stop_event.is_set():
             cyc += 1
-            can_buy = max_buy_runs is None or buy_runs_done < max_buy_runs
+            is_final = False
 
             if cyc == 1:
                 phases_this_cycle = phases_to_run
                 b, u = buy_count, unlock_count
-            elif can_buy:
-                phases_this_cycle = PHASES
-                b, u = config.NUM_CARS, config.NUM_CARS
-            else:
-                # CR exhausted: run challenges once to cap skill points, then stop
+            elif remaining_cr is not None and remaining_cr < config.CAR_PRICE_CR:
+                # Can't even afford one more car — run challenges once more to
+                # cap skill points, then stop.
                 phases_this_cycle = ["challenge"]
                 b, u = 0, config.NUM_CARS
+                is_final = True
                 print("\nCR exhausted — running final challenges to cap skill points, then stopping.")
+            else:
+                # Spend as much of whatever CR remains as this cycle can
+                # afford — a partial cycle (fewer than NUM_CARS) rather than
+                # needing a full cycle's cost to run at all.
+                next_buy = (
+                    config.NUM_CARS
+                    if remaining_cr is None
+                    else min(remaining_cr // config.CAR_PRICE_CR, config.NUM_CARS)
+                )
+                phases_this_cycle = PHASES
+                b, u = next_buy, next_buy
 
-            print(f"\n{'=' * 50}\nCycle {cyc}{' (final)' if not can_buy else ''}\n{'=' * 50}")
+            print(f"\n{'=' * 50}\nCycle {cyc}{' (final)' if is_final else ''}\n{'=' * 50}")
 
             for phase in phases_this_cycle:
                 if keys._stop_event.is_set():
@@ -314,16 +335,22 @@ def _run_farm_inner(
                     elif first_challenge:
                         ci = challenge_iters_first
                     else:
-                        ci = config._buffered(config.CHALLENGES_SUBSEQUENT)
+                        # Sized to how many cars the last cycle actually
+                        # unlocked, not CHALLENGES_SUBSEQUENT's assumed full
+                        # NUM_CARS — a CR-limited partial cycle (or the "CR
+                        # exhausted" top-up below) needs far fewer refill
+                        # challenges than a full cycle would.
+                        ci = config._buffered(config.challenges_to_refill(last_unlock_count))
                     if first_challenge:
                         first_challenge = False
                     run_phase(phase, args, challenge_iters=ci, num_cars=u)
                 elif phase == "unlock":
                     phase_result = run_phase(phase, args, num_cars=_n(phase, b, u))
-                    # If no challenge has run yet, use detected SP to correct the upcoming count
-                    if first_challenge and phase_result is not None:
+                    if phase_result is not None:
                         ocr_sp, effective_unlocked = phase_result
-                        if ocr_sp is not None:
+                        last_unlock_count = effective_unlocked
+                        # If no challenge has run yet, use detected SP to correct the upcoming count
+                        if first_challenge and ocr_sp is not None:
                             residual = max(0, ocr_sp - effective_unlocked * config.SKILL_POINTS_PER_CAR)
                             base_adj = math.ceil((config.SKILL_POINTS_CAP - residual) / config.POINTS_PER_CHALLENGE)
                             adjusted = config._buffered(base_adj)
@@ -334,10 +361,10 @@ def _run_farm_inner(
                     run_phase(phase, args, num_cars=_n(phase, b, u))
                 is_first_action = False
 
-            if "buy" in phases_this_cycle:
-                buy_runs_done += 1
+            if "buy" in phases_this_cycle and remaining_cr is not None:
+                remaining_cr -= b * config.CAR_PRICE_CR
 
-            if not can_buy:
+            if is_final:
                 break
 
     else:
