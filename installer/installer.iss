@@ -1,5 +1,5 @@
 #define MyAppName "FH6 Skill Farm"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppExeName "FH6 Skill Farm.exe"
 
 [Setup]
