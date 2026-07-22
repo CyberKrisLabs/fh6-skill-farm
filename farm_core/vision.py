@@ -125,12 +125,104 @@ def _get_fh6_window_region() -> tuple[int, int, int, int] | None:
         return None
 
 
-def _read_available_sp() -> int | None:
-    """OCR the bottom 20% of the FH6 window to read 'Available Points' from the skill tree.
+def _get_display_dpr() -> float:
+    """Device pixel ratio for the primary monitor (e.g. 1.5 for 150% scaling).
 
-    The skill tree UI shows two rows in the bottom-left:
-        Cost                  1
-        Available Points    360
+    GetDpiForMonitor returns the true effective DPI regardless of this
+    process's own DPI-awareness mode — unlike the GetSystemMetrics-based
+    ratio in _get_fh6_window_region(), which converts pygetwindow's raw
+    values to physical pixels for pyautogui but isn't the right ratio to
+    convert back to the logical space Qt widget positioning expects. Ported
+    from FH6-Sniper's window_utils._get_display_dpr, which solved the same
+    in-game overlay positioning problem there. Falls back to Qt's own
+    devicePixelRatio(), then to 1.0.
+    """
+    try:
+        import ctypes
+        import ctypes.wintypes
+
+        pt = ctypes.wintypes.POINT(0, 0)
+        monitor = ctypes.windll.user32.MonitorFromPoint(pt, 1)  # MONITOR_DEFAULTTOPRIMARY
+        dpi_x = ctypes.c_uint(96)
+        dpi_y = ctypes.c_uint(96)
+        hr = ctypes.windll.shcore.GetDpiForMonitor(monitor, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y))
+        if hr == 0:
+            return dpi_x.value / 96.0
+    except Exception:
+        pass
+    try:
+        from PySide6.QtGui import QGuiApplication
+
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            return float(screen.devicePixelRatio())
+    except Exception:
+        pass
+    return 1.0
+
+
+def get_fh6_window_logical_region() -> tuple[int, int, int, int] | None:
+    """Return (left, top, width, height) of the FH6 window in the logical
+    coordinate space Qt widget positioning expects — used by farm_ui.overlay
+    to center the in-game overlay over the FH6 window.
+
+    All four values are derived from the physical-pixel region (already
+    correct for pyautogui) divided by _get_display_dpr(). Field-tested on a
+    laptop with real DPI scaling (2026-07-21): pygetwindow's raw win.top/
+    win.height, used unscaled at first (matching FH6-Sniper's positioning
+    approach, which only round-trips the horizontal axis), produced a
+    reported window height (1276) taller than the logical screen height
+    (900) and a top offset (278) that landed the overlay ~31% down the
+    window — both consistent with raw values being in a larger, unscaled
+    space. Scaling all four axes the same way resolved it; deviate from
+    Sniper's partial approach here since this is real measured data, not
+    theory. Returns None if the window is not found.
+    """
+    try:
+        import pygetwindow as gw
+
+        wins = gw.getWindowsWithTitle("Forza Horizon 6")
+        if not wins:
+            return None
+        win = wins[0]
+        phys = _get_fh6_window_region()
+        if phys is not None:
+            phys_left, phys_top, phys_w, phys_h = phys
+            dpr = _get_display_dpr()
+            left = int(phys_left / dpr)
+            top = int(phys_top / dpr)
+            width = int(phys_w / dpr)
+            height = int(phys_h / dpr)
+        else:
+            left, top, width, height = win.left, win.top, win.width, win.height
+        return (left, top, width, height)
+    except Exception as exc:
+        print(f"[WARN] FH6 window lookup failed: {exc}")
+        return None
+
+
+def _read_available_sp() -> int | None:
+    """OCR a tight band of the FH6 window to read 'Available Points' from the skill tree.
+
+    The skill tree UI shows two rows stacked in the bottom-left:
+        Owned                  10
+        Available Points      999
+    The crop used to be the whole bottom 20% (both rows plus the button bar
+    below), which caused a real parsing bug, not just an OCR-quality one:
+    the code assumed OCR always reads numbers before labels for this pair of
+    rows (true sometimes, giving tokens like "960 0 OWNED AVAILABLE POINTS"),
+    but field-observed OCR text just as often reads labels first ("OWNED
+    AVAILABLE POINTS 10 999 0") — and in that order, walking backward from
+    "AVAILABLE" hits nothing, falls through to the "next digit forward"
+    fallback, and grabs Owned's number (10) instead of Available Points'
+    (999). Pixel-measured from a field screenshot (2026-07-22): Owned spans
+    ~81.6-83.2% of window height, Available Points ~85.5-87.6%, the Back/
+    Unlock All button row starts ~91.9% — SP_ROW_TOP_FRAC/SP_ROW_HEIGHT_FRAC
+    below isolate just the Available Points band, with margin on both
+    sides, so this row-confusion can't happen regardless of which order OCR
+    returns tokens in. Percentage-based (like the other OCR crops here), so
+    it should scale with window size the same way; a game update that
+    relayouts this panel would need these refit again.
     Returns the integer value, or None if it cannot be determined.
     """
     if not _winrt_available():
@@ -140,8 +232,12 @@ def _read_available_sp() -> int | None:
         pw, ph = pyautogui.size()
         win = (0, 0, pw, ph)
     wx, wy, ww, wh = win
-    top = int(wh * 0.80)  # bottom 20%
-    img = pyautogui.screenshot(region=(wx, wy + top, ww, wh - top))
+    SP_ROW_TOP_FRAC = 0.843
+    SP_ROW_HEIGHT_FRAC = 0.047
+    top = int(wh * SP_ROW_TOP_FRAC)
+    height = int(wh * SP_ROW_HEIGHT_FRAC)
+    region = (wx, wy + top, ww, height)
+    img = pyautogui.screenshot(region=region)
     try:
         text = asyncio.run(_winrt_ocr_async(img))
     except Exception as exc:
@@ -149,16 +245,22 @@ def _read_available_sp() -> int | None:
         return None
     upper = text.upper()
     tokens = upper.split()
-    # WinRT OCR reads the right column (numbers) before the left column (labels),
-    # so "360" appears BEFORE "AVAILABLE POINTS" in the token list.
-    # The skill-point icon is misread as "0", giving: ... 360 0 AVAILABLE POINTS ...
-    # (sometimes there's no space and it fuses onto the number itself instead —
-    # "3600" as ONE token — handled below by stripping a trailing zero if the
-    # whole-token reading comes out over the 999 cap.)
-    # Strategy: find "AVAILABLE", walk backwards skipping the icon "0", return next number.
+    # WinRT OCR's reading order for this row isn't consistent between calls —
+    # field-observed both "360 0 AVAILABLE POINTS" (number, then icon-as-"0",
+    # then labels) and "AVAILABLE POINTS 360 0" (labels first, then number,
+    # then icon). The backward-walk-from-"AVAILABLE" below handles the first
+    # order; the forward fallback after it handles the second. (Previously,
+    # with a wider crop that also included the "Owned" row above, an
+    # inconsistent order could make the backward walk latch onto Owned's
+    # number instead of Available Points' — that's why the crop is tight
+    # enough now to contain only this one row's own number + icon.)
+    # The icon sometimes fuses onto the number instead of its own token
+    # ("3600" as one token) — handled below by stripping a trailing zero if
+    # the whole-token reading comes out over the 999 cap.
     try:
         avail_idx = next(i for i, t in enumerate(tokens) if t == "AVAILABLE")
     except StopIteration:
+        print("[WARN] SP check: could not find 'Available Points' in the OCR text")
         return None
     found_icon = False
     result = None
@@ -278,11 +380,7 @@ def _read_speedometer_text() -> str:
         print(f"[WARN] OCR error (speed check): {exc}")
         return ""
     if not text.strip():
-        # Diagnostic for the "reads nothing at all" case — printed instead of
-        # silently returning "", so the exact crop box and detected window
-        # bounds are in the log the next time this happens (no screenshot
-        # needed to debug it — see CLAUDE.md known-behaviors note).
-        print(f"[WARN] Speedometer OCR returned nothing — crop region {region}, window {win}")
+        print("[WARN] Speedometer OCR returned nothing")
     return text
 
 

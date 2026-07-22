@@ -42,7 +42,6 @@ def _select_non_farm_car_as_active() -> None:
     keys.mp("enter")
     keys.mp("enter")
 
-    print(f"  [Safety] Waiting {CAR_SWITCH_POLL_START_DELAY}s, then polling for which screen loads...")
     keys._sleep(CAR_SWITCH_POLL_START_DELAY)
     if keys._stop_event.is_set():
         return
@@ -67,7 +66,6 @@ def _select_non_farm_car_as_active() -> None:
     if not detected:
         print(f"  [WARN] Neither screen detected after {CAR_SWITCH_POLL_MAX_SECONDS}s — assuming already-loaded menu")
     elif is_showcase:
-        print(f"  [Safety] Car hasn't been loaded before ({elapsed}s) — backing out of the showcase screen")
         keys.mp("escape")
         keys._sleep(CAR_SHOWCASE_EXIT_WAIT)
     keys.mp("enter")

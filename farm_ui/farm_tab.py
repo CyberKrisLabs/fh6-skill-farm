@@ -3,8 +3,9 @@
 import math
 import sys
 import threading
+import time
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QTextCursor
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -21,9 +22,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from farm_core import config, keys, orchestrator
+import farm_settings
+from farm_core import config, keys, orchestrator, vision
 from farm_ui.guide_content import START_FROM_INFO as _START_FROM_INFO
+from farm_ui.overlay import IngameOverlay
 from farm_ui.widgets import _CRSpinBox, _fixed_label, _info_button, _log_bridge, _sep, _small, _StdoutCapture
+
+try:
+    import pygetwindow as gw
+except ImportError:  # pragma: no cover - Windows-only dependency
+    gw = None
 
 # Starting from Main/Challenge always drives at least one fresh, undriven
 # challenge before any other phase runs. Entering the full SKILL_POINTS_CAP
@@ -259,11 +267,21 @@ class FarmTabMixin:
         self._sp_spin.valueChanged.connect(self._on_sp_changed)
         self._have_spin.valueChanged.connect(self._on_have_changed)
         self._cars_spin.valueChanged.connect(self._update_summary)
-        self._cr_spin.valueChanged.connect(self._update_summary)
+        self._cr_spin.valueChanged.connect(self._on_cr_changed)
         self._buffer_chk.toggled.connect(self._update_summary)
         self._challenge_only_chk.toggled.connect(self._on_challenge_only_toggled)
         self._start_btn.clicked.connect(self._on_start)
         self._stop_btn.clicked.connect(self._on_stop)
+
+        # In-game overlay (Settings tab checkbox) — shown/hidden by a watcher
+        # tied to FH6 having focus, not to whether a farm run is active, so
+        # Start is reachable from the overlay too.
+        self._ingame_overlay = None
+        self._overlay_enabled = config.CFG.show_ingame_overlay
+        self._overlay_watcher = QTimer()
+        self._overlay_watcher.setInterval(1000)
+        self._overlay_watcher.timeout.connect(self._overlay_watcher_tick)
+        self._overlay_watcher.start()
 
         return root
 
@@ -330,8 +348,11 @@ class FarmTabMixin:
     def _update_buy_cars_range(self) -> None:
         sp = self._sp_spin.value()
         have = self._have_spin.value()
+        cr = self._cr_spin.value()
         total_from_sp = min(sp // config.SKILL_POINTS_PER_CAR, config.NUM_CARS) if sp > 0 else config.NUM_CARS
-        max_buy = max(0, total_from_sp - have)
+        # 0 CR means "unlimited" (matches orchestrator._run_farm_inner's own cr>0 check).
+        max_buy_from_cr = cr // config.CAR_PRICE_CR if cr > 0 else config.NUM_CARS
+        max_buy = max(0, min(total_from_sp - have, max_buy_from_cr))
         self._cars_spin.blockSignals(True)
         self._cars_spin.setRange(0, max_buy)
         self._cars_spin.setValue(max_buy)
@@ -344,6 +365,11 @@ class FarmTabMixin:
         self._update_summary()
 
     def _on_have_changed(self) -> None:
+        if self._phase() == "buy":
+            self._update_buy_cars_range()
+        self._update_summary()
+
+    def _on_cr_changed(self) -> None:
         if self._phase() == "buy":
             self._update_buy_cars_range()
         self._update_summary()
@@ -523,14 +549,15 @@ class FarmTabMixin:
             parts += [unlock_lbl, f"Remove {unlock_count}"]
             if sp_remaining > 0:
                 base_c = math.ceil((config.SKILL_POINTS_CAP - sp_remaining) / config.POINTS_PER_CHALLENGE)
-                first_challenges = _buf(base_c)
-                parts.append(
-                    f"↺ challenge {base_c}{_buf_suffix(first_challenges - base_c)} = {first_challenges}× first, "
-                    f"then {config.CHALLENGES_SUBSEQUENT}×/cycle"
-                )
             else:
-                first_challenges = _buf(math.ceil(config.SKILL_POINTS_CAP / config.POINTS_PER_CHALLENGE))
-                parts.append(_cycle_tag(to_buy, unlock_count, first_subsequent_ci=first_challenges))
+                base_c = math.ceil(config.SKILL_POINTS_CAP / config.POINTS_PER_CHALLENGE)
+            first_challenges = _buf(base_c)
+            # No fixed "Xx/cycle" figure here — subsequent cycles' challenge
+            # counts can vary cycle to cycle once CR-limited partial buys are
+            # in play (see _simulate_subsequent_cycles), so there's no single
+            # accurate number to show; _cycle_tag's loop count and the time
+            # estimate below already account for the real per-cycle values.
+            parts.append(_cycle_tag(to_buy, unlock_count, first_subsequent_ci=first_challenges))
             parts.append(_time_buy(to_buy, unlock_count, first_challenges))
 
         elif phase in ("unlock", "remove"):
@@ -622,6 +649,7 @@ class FarmTabMixin:
         def _run() -> None:
             orig = sys.stdout
             orchestrator.challenge_adjusted_hook = lambda b, t: _log_bridge.challenge_adjusted.emit(b, t)
+            orchestrator.phase_progress_hook = lambda p, c, t, cyc: _log_bridge.phase_progress.emit(p, c, t, cyc)
             sys.stdout = _StdoutCapture()
             try:
                 orchestrator.run_farm(
@@ -637,6 +665,7 @@ class FarmTabMixin:
                 _log_bridge.message.emit(f"Error: {exc}")
             finally:
                 orchestrator.challenge_adjusted_hook = None
+                orchestrator.phase_progress_hook = None
                 sys.stdout = orig
             _log_bridge.message.emit("\x00DONE")
 
@@ -660,6 +689,46 @@ class FarmTabMixin:
         keys._stop_event.set()
         self._stop_btn.setEnabled(False)
         self._status.setText("Stopping after current iteration...")
+
+    # ── In-game overlay ──────────────────────────────────────────────────────────
+
+    def set_overlay_enabled(self, enabled: bool) -> None:
+        """Called by the Settings tab checkbox. Shows/hides the overlay right away
+        if FH6 is up; otherwise the watcher shows it as soon as FH6 gains focus."""
+        self._overlay_enabled = enabled
+        if enabled:
+            if self._ingame_overlay is None and vision.get_fh6_window_logical_region() is not None:
+                self._ingame_overlay = IngameOverlay(self)
+        elif self._ingame_overlay is not None:
+            self._ingame_overlay.close()
+            self._ingame_overlay = None
+
+    def overlay_hidden_by_user(self) -> None:
+        """The overlay's own Hide button was clicked — persist the setting off
+        and untick the Settings tab checkbox, without requiring Save Settings."""
+        self._overlay_enabled = False
+        config.CFG.show_ingame_overlay = False
+        farm_settings.save(config.CFG)
+        if hasattr(self, "_set_overlay_chk"):
+            self._set_overlay_chk.setChecked(False)
+
+    def _overlay_watcher_tick(self) -> None:
+        try:
+            want = self._overlay_enabled
+            fh6_wins = gw.getWindowsWithTitle("Forza Horizon 6") if gw else []
+            fh6 = fh6_wins[0] if fh6_wins else None
+            active = gw.getActiveWindow() if gw else None
+            focused = bool(fh6 and active and active.title == fh6.title)
+            if want and focused and self._ingame_overlay is None:
+                self._ingame_overlay = IngameOverlay(self)
+            if (not focused or not fh6) and self._ingame_overlay is not None:
+                recent_interact = (time.time() - getattr(self._ingame_overlay, "_last_interaction_time", 0)) < 1.5
+                if not recent_interact:
+                    self._ingame_overlay._user_closed = False
+                    self._ingame_overlay.close()
+                    self._ingame_overlay = None
+        except Exception:
+            pass
 
     def _set_controls(self, enabled: bool) -> None:
         challenge_only = self._challenge_only_chk.isChecked()

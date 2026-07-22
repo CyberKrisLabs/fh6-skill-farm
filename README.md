@@ -28,6 +28,28 @@ configured farm car — no manual repetition required.
 > transmission changes acceleration behavior enough to throw off the tuned
 > timings.
 
+> **Auto Drive must be turned off.** It shows a prompt right at the start of
+> the challenge, and drives the car itself — both interfere with how the
+> Challenge phase is farmed (the ease-in throttle sequence expects to be the
+> one driving, and the extra prompt isn't a screen the farm knows how to
+> handle).
+
+> **Prefer fullscreen, or a large window — avoid 4:3/unusual aspect ratios.**
+> All screen detection is OCR-based, and how many real pixels actually reach
+> the OCR engine turns out to matter more than the game's resolution
+> *setting*: Windows stretches the game's internal render to whatever size
+> the window is drawn at, so a small windowed game gets fewer real captured
+> pixels for small HUD text (the speedometer, available skill points) than
+> the same resolution setting run fullscreen — field-tested back-to-back at
+> the identical 1280x720 setting, a small window misread available skill
+> points (173 read as 10) while fullscreen read it correctly moments later,
+> purely because fullscreen captured ~37% more vertical pixels for the same
+> UI element. Separately, 4:3 (1024x768) has tested unreliably in both
+> windowed and fullscreen — avoid that regardless of window size. The farm
+> falls back to a safe default when a read fails, so it keeps running either
+> way — but fullscreen (or a large window) means fewer of those fallbacks
+> get used at all.
+
 ```bash
 pip install -r requirements.txt
 python skill_farm_ui.py
@@ -41,6 +63,16 @@ python skill_farm_ui.py
 
 Each starting point has its own ⓘ info button in the app explaining exactly
 where in the game to be before pressing Start.
+
+**Why manual entry for Car Collection position and the 9x multiplier car?**
+These positions come from your own account's Car Collection / My Cars lists,
+which are different for everyone — how many cars you own and which ones
+shifts the exact row/column for any given car. Hardcoding fixed positions
+would break the moment FH6 adds new cars in a game update, or the moment your
+own garage changes at all — a tool that asks you to type these in once (and
+re-check them after any garage change, see the ⓘ info buttons in Settings)
+keeps working across updates instead of needing constant maintenance to chase
+a moving target.
 
 ---
 

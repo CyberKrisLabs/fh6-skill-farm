@@ -77,8 +77,14 @@ CHALLENGE_START_LAST_TAP_PAUSE = 1.5  # longer released pause after the final ta
 STUCK_CHECK_DELAY_SECONDS = 5
 # A single OCR read can misread a bad frame and miss a real stuck start (no
 # retry to fall back on, unlike the end-of-race detection). Take a few samples
-# instead — any one reading near-zero is enough to call it stuck.
-STUCK_CHECK_POLL_COUNT = 3
+# instead — any one reading near-zero is enough to call it stuck. At low game
+# resolutions (e.g. 1024x768) the speedometer digits carry too few real source
+# pixels for WinRT OCR to resolve consistently — reads at that resolution have
+# been observed to swing between empty, partial, and fully correct across
+# samples in the same run, so more samples measurably improve the odds of
+# catching a good one (the built-in 2x upscale in vision._winrt_ocr_async
+# smooths the image but can't recover detail that was never captured).
+STUCK_CHECK_POLL_COUNT = 5
 STUCK_CHECK_POLL_INTERVAL = 1
 
 # Set by run_challenge_iteration when it just fixed a stuck start via restart.

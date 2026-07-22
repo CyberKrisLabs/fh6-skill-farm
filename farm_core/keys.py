@@ -36,6 +36,29 @@ _WATCHDOG_INTERVAL = 5  # seconds between window-presence checks
 _WATCHDOG_MISSES = 3  # consecutive misses before declaring crash (~15 s total)
 
 
+def _fh6_focused() -> bool:
+    """True if the FH6 window is currently the OS foreground window.
+
+    Uses GetForegroundWindow directly rather than vision._get_fh6_window_region()
+    (which enumerates via pygetwindow and does DPI-scaling math) — this needs
+    to be cheap enough to call before every single key press in mp(), unlike
+    the watchdog's once-per-5s crash check. Fails open (returns True) on any
+    lookup error, matching this codebase's existing preference for not
+    stopping a run over a transient OS-call hiccup (see e.g.
+    vision._read_challenge_end_text's "assume success" fallback).
+    """
+    try:
+        import ctypes
+
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(length + 1)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+        return "forza horizon 6" in buf.value.lower()
+    except Exception:
+        return True
+
+
 def _watchdog_thread() -> None:
     """Background thread: stops the farm if the FH6 window vanishes (crash/close)."""
     misses = 0
@@ -69,11 +92,24 @@ def mp(key, count=1, wait=None):
     check is what makes Stop responsive across the many ad hoc, unguarded
     transition functions elsewhere — once the stop event is set, every
     subsequent mp() call anywhere becomes a no-op instead of pressing keys.
+
+    Also checks FH6 is still the focused window before every press, same
+    granularity as the stop check — if the user tabs away mid-run (e.g.
+    during the Remove -> Main Menu transition), further presses would go to
+    whatever app they switched to instead. Treated the same as clicking
+    Stop (sets _stop_event) rather than pausing/auto-resuming — this
+    codebase's transitions are scripted key sequences, not a simple retry
+    loop, so resuming mid-sequence later could leave things in a
+    half-finished state; a hard stop is the safer behavior.
     """
     if wait is None:
         wait = config.MENU_WAIT
     for _ in range(count):
         if _stop_event.is_set():
+            return
+        if not _fh6_focused():
+            print("[WARN] FH6 lost focus — stopping the farm (same as clicking Stop)")
+            _stop_event.set()
             return
         _press_key(key)
         _sleep(wait)

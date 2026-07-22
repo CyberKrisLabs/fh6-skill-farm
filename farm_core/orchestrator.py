@@ -15,6 +15,24 @@ from farm_core import buy, challenge, config, keys, remove, unlock
 # Signature: (base_challenges: int, buffered_challenges: int) -> None
 challenge_adjusted_hook = None
 
+# Callable hook set by GUI before starting the farm, cleared when done.
+# Signature: (phase: str, current: int, total: int, cycle: int) -> None
+# Fired once per phase-iteration (e.g. "Challenge 5/98") so a live UI (the
+# in-game overlay) can show progress without scraping log text. total is 0
+# for the "run until interrupted" challenge-only path, where there's no fixed
+# count to report.
+phase_progress_hook = None
+
+# Current cycle number, for phase_progress_hook — reset at the start of every
+# run_farm() call and updated at the top of each cycle-mode loop iteration.
+_current_cycle = 1
+
+
+def _report_progress(phase: str, current: int, total: int) -> None:
+    if phase_progress_hook:
+        phase_progress_hook(phase, current, total, _current_cycle)
+
+
 # ── Transitions registry ───────────────────────────────────────────────────────
 # Maps each phase to the function that navigates there from the previous phase.
 # Transitions are only called in cycle mode, never on the first action.
@@ -29,7 +47,7 @@ TRANSITIONS = {
 PHASES = ["challenge", "buy", "unlock", "remove"]
 
 
-def run_phase(name, args, challenge_iters=None, num_cars=None):
+def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=None):
     if num_cars is None:
         num_cars = config.NUM_CARS
     if name == "challenge":
@@ -46,6 +64,7 @@ def run_phase(name, args, challenge_iters=None, num_cars=None):
             while completed < challenge_iters and not keys._stop_event.is_set():
                 _label = f"{completed + 1}/{challenge_iters}"
                 print(f"  Challenge {_label}")
+                _report_progress("challenge", completed + 1, challenge_iters)
                 success = challenge.run_challenge_iteration(
                     final=completed + 1 == challenge_iters, label=_label, check_stuck_start=retry_after_failure
                 )
@@ -66,6 +85,7 @@ def run_phase(name, args, challenge_iters=None, num_cars=None):
             while completed < iterations and not keys._stop_event.is_set():
                 _label = f"{completed + 1}/{iterations}"
                 print(f"  Challenge {_label}")
+                _report_progress("challenge", completed + 1, iterations)
                 success = challenge.run_challenge_iteration(
                     final=completed + 1 == iterations, label=_label, check_stuck_start=retry_after_failure
                 )
@@ -81,6 +101,7 @@ def run_phase(name, args, challenge_iters=None, num_cars=None):
             while not keys._stop_event.is_set():
                 i += 1
                 print(f"  Challenge {i}")
+                _report_progress("challenge", i, 0)
                 success = challenge.run_challenge_iteration(label=str(i), check_stuck_start=retry_after_failure)
                 retry_after_failure = not success and not challenge._last_run_was_stuck_restart
                 if not success:
@@ -94,6 +115,7 @@ def run_phase(name, args, challenge_iters=None, num_cars=None):
             if keys._stop_event.is_set():
                 break
             print(f"  Buy {i}/{num_cars}")
+            _report_progress("buy", i, num_cars)
             buy.run_buy_iteration()
 
     elif name == "unlock":
@@ -104,7 +126,12 @@ def run_phase(name, args, challenge_iters=None, num_cars=None):
         while i < effective and not keys._stop_event.is_set():
             i += 1
             print(f"  Unlock {i}/{effective}")
-            detected_sp, adjusted = unlock.run_unlock_iteration(i, expected_cars=effective if i == 1 else None)
+            _report_progress("unlock", i, effective)
+            detected_sp, adjusted = unlock.run_unlock_iteration(
+                i,
+                expected_cars=effective if i == 1 else None,
+                expected_sp_hint=expected_sp_hint if i == 1 else None,
+            )
             if i == 1:
                 _ocr_sp = detected_sp
                 if adjusted is not None:
@@ -119,6 +146,7 @@ def run_phase(name, args, challenge_iters=None, num_cars=None):
             if keys._stop_event.is_set():
                 break
             print(f"  Remove {i}/{num_cars}")
+            _report_progress("remove", i, num_cars)
             remove.run_remove_iteration()
         if not keys._stop_event.is_set():
             remove._switch_to_multiplier_car()
@@ -207,6 +235,8 @@ def run_farm(
 def _run_farm_inner(
     start: str, skill_points: int, cars: int, cars_have: int, cr: int, cycle: bool, challenge_only: bool = False
 ) -> None:
+    global _current_cycle
+    _current_cycle = 1
     if challenge_only:
         if start == "main":
             print("Navigating to challenge from main menu...")
@@ -296,6 +326,7 @@ def _run_farm_inner(
 
         while not keys._stop_event.is_set():
             cyc += 1
+            _current_cycle = cyc
             is_final = False
 
             if cyc == 1:
@@ -322,12 +353,19 @@ def _run_farm_inner(
 
             print(f"\n{'=' * 50}\nCycle {cyc}{' (final)' if is_final else ''}\n{'=' * 50}")
 
+            # Best tracked estimate of current SP, for Unlock's SP-check
+            # plausibility test (see unlock.run_unlock_iteration). Every
+            # challenge phase in this app is sized to bring SP up to the
+            # cap, so if one is scheduled this cycle before unlock runs,
+            # SP should be at/near SKILL_POINTS_CAP by the time we get
+            # there; otherwise (a Buy/Unlock/Remove start whose first cycle
+            # skips straight past challenge) nothing has touched SP yet, so
+            # the user's own entered starting value is the best estimate.
+            expected_sp_hint = config.SKILL_POINTS_CAP if "challenge" in phases_this_cycle else skill_points
+
             for phase in phases_this_cycle:
                 if keys._stop_event.is_set():
                     break
-                if not is_first_action and phase in TRANSITIONS:
-                    print(f"Transition: navigating to {phase}...")
-                    TRANSITIONS[phase]()
                 if phase == "challenge":
                     if _override_challenge_iters is not None:
                         ci = _override_challenge_iters
@@ -343,14 +381,40 @@ def _run_farm_inner(
                         ci = config._buffered(config.challenges_to_refill(last_unlock_count))
                     if first_challenge:
                         first_challenge = False
-                    run_phase(phase, args, challenge_iters=ci, num_cars=u)
+                    if ci <= 0:
+                        # Computed before navigating anywhere — no point
+                        # entering a challenge just to immediately back out
+                        # of it with zero runs.
+                        print("Skipping challenge phase — 0 challenges needed.")
+                    else:
+                        if not is_first_action and phase in TRANSITIONS:
+                            print(f"Transition: navigating to {phase}...")
+                            TRANSITIONS[phase]()
+                        run_phase(phase, args, challenge_iters=ci, num_cars=u)
                 elif phase == "unlock":
-                    phase_result = run_phase(phase, args, num_cars=_n(phase, b, u))
+                    if not is_first_action and phase in TRANSITIONS:
+                        print(f"Transition: navigating to {phase}...")
+                        TRANSITIONS[phase]()
+                    phase_result = run_phase(phase, args, num_cars=_n(phase, b, u), expected_sp_hint=expected_sp_hint)
                     if phase_result is not None:
                         ocr_sp, effective_unlocked = phase_result
                         last_unlock_count = effective_unlocked
-                        # If no challenge has run yet, use detected SP to correct the upcoming count
-                        if first_challenge and ocr_sp is not None:
+                        # Remove runs right after, this same cycle — point it
+                        # at how many cars actually got unlocked, not the
+                        # original plan, so a car that never got its
+                        # wheelspins claimed (SP fell short mid-cycle) isn't
+                        # scrapped for nothing along with the ones that did.
+                        u = effective_unlocked
+                        # Use detected SP to correct the upcoming challenge count
+                        # every time Unlock's check reads it, not just the
+                        # session's first check — challenges_to_refill()
+                        # (used below when this doesn't fire, e.g. a
+                        # challenge-only top-up cycle with no unlock in it)
+                        # only knows how many cars were unlocked, not whether
+                        # SP actually reached the cap beforehand; residual
+                        # here is exact, computed from what was actually
+                        # read/tracked this check.
+                        if ocr_sp is not None:
                             residual = max(0, ocr_sp - effective_unlocked * config.SKILL_POINTS_PER_CAR)
                             base_adj = math.ceil((config.SKILL_POINTS_CAP - residual) / config.POINTS_PER_CHALLENGE)
                             adjusted = config._buffered(base_adj)
@@ -358,6 +422,9 @@ def _run_farm_inner(
                             if challenge_adjusted_hook:
                                 challenge_adjusted_hook(base_adj, adjusted)
                 else:
+                    if not is_first_action and phase in TRANSITIONS:
+                        print(f"Transition: navigating to {phase}...")
+                        TRANSITIONS[phase]()
                     run_phase(phase, args, num_cars=_n(phase, b, u))
                 is_first_action = False
 
@@ -369,13 +436,14 @@ def _run_farm_inner(
 
     else:
         is_first_action = True
+        expected_sp_hint = config.SKILL_POINTS_CAP if "challenge" in phases_to_run else skill_points
         for phase in phases_to_run:
             if keys._stop_event.is_set():
                 break
             if not is_first_action and phase in TRANSITIONS:
                 print(f"Transition: navigating to {phase}...")
                 TRANSITIONS[phase]()
-            run_phase(phase, args, num_cars=_n(phase, buy_count, unlock_count))
+            run_phase(phase, args, num_cars=_n(phase, buy_count, unlock_count), expected_sp_hint=expected_sp_hint)
             is_first_action = False
         if not keys._stop_event.is_set():
             print("All phases complete.")

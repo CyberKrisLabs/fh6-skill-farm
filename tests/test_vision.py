@@ -65,17 +65,16 @@ def test_speed_digit_readable_false_when_only_unit_label():
     assert vision._is_speed_zero("MPH") is False  # also not a false stuck-positive
 
 
-def test_read_speedometer_text_logs_region_when_empty(monkeypatch, capsys):
+def test_read_speedometer_text_logs_when_empty(monkeypatch, capsys):
     """Also seen in the field on the same MPH PC — OCR sometimes reads back
-    nothing at all. Logging the crop region + window bounds here gives
-    concrete numbers to diagnose from without needing a screenshot.
+    nothing at all. Logged (plainly, no crop/window details) so this isn't
+    silent.
     """
     _patch_ocr(monkeypatch, "")
     text = vision._read_speedometer_text()
     assert text == ""
     out = capsys.readouterr().out
-    assert "crop region" in out
-    assert "window" in out
+    assert "returned nothing" in out
 
 
 def test_read_speedometer_text_no_extra_log_when_readable(monkeypatch, capsys):

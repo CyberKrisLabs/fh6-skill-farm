@@ -8,12 +8,14 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -128,7 +130,7 @@ class SettingsTabMixin:
         code_row.addStretch()
         ch_col.addLayout(code_row)
 
-        self._set_whats_next_chk = QCheckBox('"What\'s Next" enabled (HUD & Gameplay)')
+        self._set_whats_next_chk = QCheckBox('"What\'s Next" enabled (HUD && Gameplay)')
         whats_next_row = QHBoxLayout()
         whats_next_row.addWidget(self._set_whats_next_chk)
         whats_next_row.addWidget(_info_button(self._show_whats_next_info))
@@ -196,6 +198,20 @@ class SettingsTabMixin:
 
         vbox.addWidget(mult_box)
 
+        # ── In-game overlay ────────────────────────────────────────────────────
+        overlay_box = QGroupBox("IN-GAME OVERLAY")
+        overlay_col = QVBoxLayout(overlay_box)
+        overlay_col.setSpacing(8)
+
+        self._set_overlay_chk = QCheckBox("Show In-Game Overlay")
+        overlay_row = QHBoxLayout()
+        overlay_row.addWidget(self._set_overlay_chk)
+        overlay_row.addWidget(_info_button(self._show_overlay_info))
+        overlay_row.addStretch()
+        overlay_col.addLayout(overlay_row)
+
+        vbox.addWidget(overlay_box)
+
         # Derived economics preview
         self._settings_econ = QLabel()
         self._settings_econ.setProperty("class", "status-label")
@@ -215,11 +231,17 @@ class SettingsTabMixin:
 
         self._set_car_combo.currentIndexChanged.connect(lambda _i: self._load_car_fields())
         self._set_soko78_chk.toggled.connect(lambda _checked: self._load_car_fields())
+        self._set_overlay_chk.toggled.connect(self.set_overlay_enabled)
         self._settings_save_btn.clicked.connect(self._on_save_settings)
         self._copy_code_btn.clicked.connect(self._on_copy_share_code)
 
         self._load_settings_fields()
-        return self._settings_root
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(self._settings_root)
+        return scroll
 
     def _load_settings_fields(self) -> None:
         cfg = config.CFG
@@ -235,6 +257,7 @@ class SettingsTabMixin:
         self._set_filter_type.setValue(cfg.filter_car_type_row + 1)
         self._set_mult_col.setValue(cfg.multiplier_car_col + 1)
         self._set_mult_row.setValue(cfg.multiplier_car_row + 1)
+        self._set_overlay_chk.setChecked(cfg.show_ingame_overlay)
         self._update_settings_econ()
 
     def _load_car_fields(self) -> None:
@@ -271,6 +294,9 @@ class SettingsTabMixin:
     def _show_whats_next_info(self) -> None:
         self._show_settings_info("whats_next")
 
+    def _show_overlay_info(self) -> None:
+        self._show_settings_info("overlay")
+
     def _show_settings_info(self, key: str) -> None:
         title, text = SETTINGS_INFO[key]
         dlg = QMessageBox(self)
@@ -303,6 +329,7 @@ class SettingsTabMixin:
         cfg.multiplier_car_col = self._set_mult_col.value() - 1
         cfg.multiplier_car_row = self._set_mult_row.value() - 1
         cfg.multiplier_car_configured = True
+        cfg.show_ingame_overlay = self._set_overlay_chk.isChecked()
 
         farm_settings.save(cfg)
         config.refresh_config()

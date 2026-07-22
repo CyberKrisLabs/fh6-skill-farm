@@ -70,6 +70,7 @@ class _CRSpinBox(QSpinBox):
 class _LogBridge(QObject):
     message = Signal(str)
     challenge_adjusted = Signal(int, int)  # (base_challenges, buffered_challenges) from OCR detection
+    phase_progress = Signal(str, int, int, int)  # (phase, current, total, cycle) — see orchestrator.phase_progress_hook
 
 
 _log_bridge = _LogBridge()

@@ -81,6 +81,21 @@ class GuideTabMixin:
             "removes cars).",
         )
 
+        _add_para(
+            root,
+            "Why manual entry for the Car Collection position and 9x "
+            "multiplier car, instead of the app just knowing? These come "
+            "from your own account's Car Collection / My Cars lists, which "
+            "are different for everyone — how many cars you own and which "
+            "ones shifts the exact row/column for any given car. Hardcoding "
+            "fixed positions would break the moment FH6 adds new cars in a "
+            "game update, or the moment your own garage changes at all — "
+            "typing these in once per account (and re-checking them after "
+            "any garage change) keeps the tool working across updates "
+            "instead of needing constant maintenance to chase a moving "
+            "target.",
+        )
+
         _add_section(root, "FARM CAR")
         _add_para(
             root,
@@ -135,6 +150,29 @@ class GuideTabMixin:
             "drops the input.",
         )
 
+        _add_para(
+            root,
+            "Separately from timing: prefer fullscreen, or a large window "
+            "— avoid 4:3/unusual aspect ratios. All screen detection is "
+            "OCR-based, and how many real pixels actually reach the OCR "
+            "engine turns out to matter more than the game's resolution "
+            "setting: Windows stretches the game's internal render to "
+            "whatever size the window is drawn at, so a small windowed "
+            "game gets fewer real captured pixels for small HUD text (the "
+            "speedometer, available skill points) than the same resolution "
+            "setting run fullscreen — field-tested back-to-back at the "
+            "identical 1280x720 setting, a small window misread available "
+            "skill points (173 read as 10) while fullscreen read it "
+            "correctly moments later, purely because fullscreen captured "
+            "~37% more vertical pixels for the same UI element. "
+            "Separately, 4:3 (1024x768) has tested unreliably in both "
+            "windowed and fullscreen — avoid that regardless of window "
+            "size. The retries built into these checks fall back to a "
+            "safe default when a read fails, so the farm keeps running "
+            "either way — but fullscreen (or a large window) means fewer "
+            "of those fallbacks getting used at all.",
+        )
+
         _add_section(root, "MENU NAVIGATION")
         for key in ("MENU_WAIT", "NAV_WAIT", "PAGE_WAIT", "TYPING_WAIT"):
             label, text = TIMING_INFO[key]
@@ -145,6 +183,7 @@ class GuideTabMixin:
         for key in (
             "LOADING_CHALLENGE_WAIT",
             "LOADING_AFTER_CHALLENGE_EXIT_WAIT",
+            "LOADING_TRAVEL_WAIT",
             "LOADING_RETRY_WAIT",
             "LOADING_RESET_WAIT",
         ):
@@ -153,7 +192,7 @@ class GuideTabMixin:
             _add_para(root, text)
 
         _add_section(root, "UNLOCK / REMOVE")
-        for key in ("LOADING_NON_PRELOADED_CAR_WAIT", "LOADING_EXIT_TO_GAME_WAIT"):
+        for key in ("LOADING_EXIT_TO_GAME_WAIT",):
             label, text = TIMING_INFO[key]
             _add_subhead(root, label)
             _add_para(root, text)

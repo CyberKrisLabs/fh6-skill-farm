@@ -18,6 +18,10 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "throttle sequence and hold timings are tuned for automatic "
         "shifting, and manual changes acceleration behavior enough to throw "
         "them off.\n\n"
+        "And make sure Auto Drive is turned off — it shows a prompt right at "
+        "the start of the challenge and drives the car itself, which "
+        "interferes with the ease-in throttle sequence and isn't a screen "
+        "the farm knows how to handle.\n\n"
         "In the game, while in Free Roam, press Escape to open the Main "
         'Menu. The tab should be on the first tab, "Campaign".\n\n'
         "The tool will navigate from there to the challenge.",
@@ -35,6 +39,10 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "throttle sequence and hold timings are tuned for automatic "
         "shifting, and manual changes acceleration behavior enough to throw "
         "them off.\n\n"
+        "And make sure Auto Drive is turned off — it shows a prompt right at "
+        "the start of the challenge and drives the car itself, which "
+        "interferes with the ease-in throttle sequence and isn't a screen "
+        "the farm knows how to handle.\n\n"
         "The challenge starts driving immediately — there's no Enter press to "
         "kick it off — so you need to already be inside the challenge yourself "
         "before starting here. Enter it manually using the share code from the "
@@ -62,11 +70,10 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "many cars you've bought.\n\n"
         "IMPORTANT: don't have any cars newer than the ones you just bought — "
         "this farm sorts by recently added, so acquiring any other car "
-        "afterward breaks it. You also should NOT have entered/driven any car "
-        "you want to unlock — this farm relies on cars being non-preloaded, "
-        "which is the state of newly acquired cars. Every car you want to "
-        'unlock should still show the "New" badge in the list, or this won\'t '
-        "work.",
+        "afterward breaks it. Whether the cars you're unlocking are still "
+        '"New" (never entered) or already loaded from earlier this session '
+        "doesn't matter — the farm detects which screen it lands on after "
+        "selecting each car and adjusts automatically either way.",
     ),
     "remove": (
         "Remove",
@@ -119,6 +126,19 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "that extra Escape when the screen never appears would misfire into "
         "whatever's on screen next instead.",
     ),
+    "overlay": (
+        "In-Game Overlay",
+        "Shows a small always-on-top HUD over the FH6 window itself, with "
+        "Start / Stop, the elapsed run time, current cycle/phase progress "
+        '(e.g. "Cycle 2 · Buy 14/25"), and the latest log line — so you can '
+        "check status or hit Stop without alt-tabbing back to this app.\n\n"
+        "It only appears while FH6 has focus, and hides itself again if you "
+        "switch away — it won't linger over other windows. Its own Hide "
+        "button turns this setting back off immediately (no need to come "
+        "back here and save).\n\n"
+        "Off by default — it's an optional convenience, not everyone wants "
+        "an extra HUD element on top of the game.",
+    ),
     "multiplier_filter": (
         "9x Multiplier Car — Filter",
         "In the My Cars list, press Y to open Filter. It's one long "
@@ -136,18 +156,47 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "the multiplier isn't limited to one specific car or class.\n\n"
         "Both boxes get checked to narrow My Cars down to just your "
         "multiplier car before finding its position — see the Position "
-        "section below.",
+        "section below.\n\n"
+        "IMPORTANT: any change to your garage through normal play between "
+        "farm sessions — getting, buying, removing, or selling a car, a "
+        "wheelspin reward, anything outside the farm itself — can shift "
+        "these row numbers, if the filter list only shows categories that "
+        "have at least one matching car in it. Removing/selling matters "
+        "just as much as acquiring: it can make a category disappear from "
+        "the filter list entirely (shifting every row below it up), not "
+        "just add one. (The cars this farm buys don't cause this — they're "
+        "always removed again before it switches to the multiplier car, so "
+        "they never linger in My Cars.) Re-check both rows before starting "
+        "a new farm run if your garage has changed at all since you last "
+        "set this up, rather than assuming it's still accurate.",
     ),
     "multiplier_position": (
         "9x Multiplier Car — Position",
         "After filtering My Cars to your configured Performance Class + Car "
         "Type, this is where the multiplier car sits in the filtered grid: "
         "Row 1–3 (3 rows per column), Column left to right.\n\n"
+        'IMPORTANT: sort My Cars by "Recently Added" before you work this '
+        "out — not whatever sort the list happens to already be on. During "
+        "the Remove phase, the farm opens My Cars sorted by Recently Added "
+        "(it needs that sort to find the cars it just bought) and never "
+        "changes the sort back before switching to the multiplier car "
+        "right after — so that's the sort order actually active in the "
+        "filtered grid when the position you set here gets used live. Set "
+        "this up on any other sort and the row/column you record won't "
+        "match where the farm actually finds it once running.\n\n"
         "Important: when you work this out, make sure you're not currently "
         "IN a car that matches that same Performance Class / Car Type — if "
         "you are, the order shown won't match the order the farm will "
         "actually see once it's running, and the position you record here "
-        "will be wrong.",
+        "will be wrong.\n\n"
+        "IMPORTANT: re-check this position before starting a new farm run "
+        "too, for the same reason as the Filter rows above — any garage "
+        "change through normal play between farm sessions (getting, buying, "
+        "removing, or selling a car) can shift where your multiplier car "
+        "ends up sitting in the filtered grid. Removing/selling a car "
+        "shifts positions just as much as acquiring one does. (Cars the "
+        "farm buys itself don't cause this — they're removed again before "
+        "it switches to the multiplier car.)",
     ),
 }
 
@@ -196,7 +245,14 @@ TIMING_INFO: dict[str, tuple[str, str]] = {
         "results, while it loads — the Main Menu → Challenge transition.\n\n"
         "One of the longest waits in the farm, since it covers an actual level "
         "load rather than a menu animation. Raise it if the challenge doesn't "
-        "auto-start driving in time for the ease-in sequence.",
+        "auto-start driving in time for the ease-in sequence.\n\n"
+        "Too high has a real cost, not just wasted time: this wait doesn't "
+        "pause the challenge's own countdown, so once the level has actually "
+        "finished loading, every extra second spent still waiting is a second "
+        "taken off the time you have to complete it — set much higher than "
+        "your PC needs, it can turn an otherwise-completable run into a wasted "
+        "one. Worth testing this one down to the lowest value that reliably "
+        "works on your PC, not just leaving it generous.",
     ),
     "LOADING_AFTER_CHALLENGE_EXIT_WAIT": (
         "Loading After Challenge Exit Wait",
@@ -233,15 +289,6 @@ TIMING_INFO: dict[str, tuple[str, str]] = {
         "A rare path, but since it involves a fuller reload than a normal Retry, "
         "it gets a longer wait. Raise it if runs recovered this way come out "
         "stuck or in a bad state.",
-    ),
-    "LOADING_NON_PRELOADED_CAR_WAIT": (
-        "Loading Non-Preloaded Car Wait",
-        "The wait (in seconds), during the Unlock phase, after selecting a car "
-        "FH6 hasn't loaded yet this session — before it's ready to enter the "
-        "skill tree.\n\n"
-        "A car already loaded this session enters almost instantly; a fresh one "
-        "takes noticeably longer to render. Raise it if unlock sometimes opens "
-        "the skill tree before the car has actually finished loading.",
     ),
     "LOADING_EXIT_TO_GAME_WAIT": (
         "Loading Exit To Game Wait",

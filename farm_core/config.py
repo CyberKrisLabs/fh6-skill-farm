@@ -32,11 +32,6 @@ LOADING_TRAVEL_WAIT = 10
 LOADING_CHALLENGE_WAIT = 25  # Wait for challenge to load from Main Menu (longer than normal loading)
 LOADING_RETRY_WAIT = 25  # Wait after escape (retry challenge) until the next run is drivable
 LOADING_RESET_WAIT = 20  # Wait after a pause-menu restart (failed run recovery)
-# Entering a car FH6 hasn't loaded yet this session takes much longer than one
-# already loaded — used when unlocking a fresh car. (Switching the active car
-# away from the farm cars before removal has its own polling wait in
-# farm_core.remove, since there the outcome — loaded or not — isn't known up front.)
-LOADING_NON_PRELOADED_CAR_WAIT = 12
 LOADING_EXIT_TO_GAME_WAIT = 9  # Wait after escaping the car menu back into Free Roam
 
 # ── Configuration ──────────────────────────────────────────────────────────────
@@ -85,7 +80,7 @@ def refresh_timings() -> None:
     """Apply CFG.timings overrides onto the wait constants. Call after changing/saving settings."""
     global MENU_WAIT, NAV_WAIT, PAGE_WAIT, TYPING_WAIT
     global LOADING_AFTER_CHALLENGE_EXIT_WAIT, LOADING_TRAVEL_WAIT, LOADING_CHALLENGE_WAIT, LOADING_RETRY_WAIT
-    global LOADING_RESET_WAIT, LOADING_NON_PRELOADED_CAR_WAIT, LOADING_EXIT_TO_GAME_WAIT
+    global LOADING_RESET_WAIT, LOADING_EXIT_TO_GAME_WAIT
     t = CFG.timings
     MENU_WAIT = t.get("MENU_WAIT", MENU_WAIT)
     NAV_WAIT = t.get("NAV_WAIT", NAV_WAIT)
@@ -96,7 +91,6 @@ def refresh_timings() -> None:
     LOADING_CHALLENGE_WAIT = t.get("LOADING_CHALLENGE_WAIT", LOADING_CHALLENGE_WAIT)
     LOADING_RETRY_WAIT = t.get("LOADING_RETRY_WAIT", LOADING_RETRY_WAIT)
     LOADING_RESET_WAIT = t.get("LOADING_RESET_WAIT", LOADING_RESET_WAIT)
-    LOADING_NON_PRELOADED_CAR_WAIT = t.get("LOADING_NON_PRELOADED_CAR_WAIT", LOADING_NON_PRELOADED_CAR_WAIT)
     LOADING_EXIT_TO_GAME_WAIT = t.get("LOADING_EXIT_TO_GAME_WAIT", LOADING_EXIT_TO_GAME_WAIT)
 
 

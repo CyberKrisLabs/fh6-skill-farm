@@ -56,8 +56,32 @@ TIMING_DEFAULTS: dict[str, float] = {
     "LOADING_CHALLENGE_WAIT": 25,
     "LOADING_RETRY_WAIT": 25,
     "LOADING_RESET_WAIT": 20,
-    "LOADING_NON_PRELOADED_CAR_WAIT": 12,
     "LOADING_EXIT_TO_GAME_WAIT": 9,
+}
+
+# Menu-navigation waits (MENU_WAIT/NAV_WAIT/PAGE_WAIT/TYPING_WAIT) and most
+# LOADING_* waits are paced by the game's own menu animations, which measured
+# identically on a tested desktop and a tested laptop running FH6 at 1024x768
+# for smoothness. The two that DID differ were both genuine asset-loading
+# waits: LOADING_TRAVEL_WAIT (Free Roam -> House/Festival fast-travel) and
+# LOADING_CHALLENGE_WAIT (challenge search -> loaded into the challenge).
+# "Fast" matches the tested desktop; "Slow" matches the tested laptop; "Mid"
+# splits the difference for hardware in between. Everything else is left at
+# TIMING_DEFAULTS across all three tiers on purpose — there's no measurement
+# yet showing those need to vary, and inventing numbers without evidence
+# would just be a guess dressed up as a preset.
+TIMING_PRESETS: dict[str, dict[str, float]] = {
+    "Fast": dict(TIMING_DEFAULTS),
+    "Mid": {
+        **TIMING_DEFAULTS,
+        "LOADING_TRAVEL_WAIT": 11.0,
+        "LOADING_CHALLENGE_WAIT": 27.0,
+    },
+    "Slow": {
+        **TIMING_DEFAULTS,
+        "LOADING_TRAVEL_WAIT": 12.0,
+        "LOADING_CHALLENGE_WAIT": 29.0,
+    },
 }
 
 
@@ -179,6 +203,11 @@ class Settings:
     # Off by default: not every account owns it, so assuming it would
     # undercount the real cost for anyone who doesn't.
     soko78_house_owned: bool
+    # Whether the in-game overlay (Start/Stop/phase progress/log line, shown
+    # over the FH6 window itself) is enabled. Off by default — it's an
+    # optional convenience, not everyone wants an extra HUD element on top
+    # of the game.
+    show_ingame_overlay: bool
     # User-editable wait constants (Timings tab) — see TIMING_DEFAULTS.
     timings: dict[str, float]
 
@@ -219,6 +248,7 @@ def _default_settings() -> Settings:
         multiplier_car_configured=False,
         whats_next_enabled=False,
         soko78_house_owned=False,
+        show_ingame_overlay=False,
         timings=dict(TIMING_DEFAULTS),
     )
 
@@ -256,6 +286,7 @@ def load(path: pathlib.Path = SETTINGS_PATH) -> Settings:
         "multiplier_car_configured",
         "whats_next_enabled",
         "soko78_house_owned",
+        "show_ingame_overlay",
     ):
         if field in data:
             setattr(settings, field, data[field])

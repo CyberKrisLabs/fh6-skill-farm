@@ -1,6 +1,7 @@
 """Timings tab: user-editable wait constants, grouped by when they're used."""
 
 from PySide6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
@@ -27,6 +28,7 @@ class TimingsTabMixin:
         vbox.setSpacing(10)
 
         self._timing_spins: dict[str, QDoubleSpinBox] = {}
+        self._applying_timing_preset = False
 
         def _timing_row(parent_layout, key: str) -> None:
             label, _ = _TIMING_INFO[key]
@@ -35,18 +37,30 @@ class TimingsTabMixin:
             spin = QDoubleSpinBox()
             # Floor at 1/5 of the default — low enough to tune, but not so low
             # the game reliably drops the input (e.g. 0s waits, instant taps).
-            min_wait = round(farm_settings.TIMING_DEFAULTS[key] / 5, 3)
+            min_wait = round(farm_settings.TIMING_DEFAULTS[key] / 5, 2)
             spin.setRange(min_wait, 120.0)
-            spin.setDecimals(3)
+            spin.setDecimals(2)
             spin.setSingleStep(0.05)
             spin.setFixedWidth(90)
             spin.setSuffix(" s")
+            spin.valueChanged.connect(self._on_timing_value_changed)
             self._timing_spins[key] = spin
             row.addWidget(spin)
             row.addWidget(_small(f"min {min_wait}s"))
             row.addWidget(_info_button(lambda: self._show_timing_info(key)))
             row.addStretch()
             parent_layout.addLayout(row)
+
+        preset_box = QGroupBox("TIMING PRESET")
+        preset_row = QHBoxLayout(preset_box)
+        self._timing_preset_combo = QComboBox()
+        self._timing_preset_combo.addItems(["Custom", *farm_settings.TIMING_PRESETS.keys()])
+        self._timing_preset_combo.setFixedWidth(120)
+        self._timing_preset_combo.currentTextChanged.connect(self._on_timing_preset_change)
+        preset_row.addWidget(self._timing_preset_combo)
+        preset_row.addWidget(_info_button(self._show_timing_preset_info))
+        preset_row.addStretch()
+        vbox.addWidget(preset_box)
 
         nav_box = QGroupBox("MENU NAVIGATION")
         nav_col = QVBoxLayout(nav_box)
@@ -71,7 +85,7 @@ class TimingsTabMixin:
         unlock_remove_box = QGroupBox("UNLOCK / REMOVE")
         unlock_remove_col = QVBoxLayout(unlock_remove_box)
         unlock_remove_col.setSpacing(8)
-        for key in ("LOADING_NON_PRELOADED_CAR_WAIT", "LOADING_EXIT_TO_GAME_WAIT"):
+        for key in ("LOADING_EXIT_TO_GAME_WAIT",):
             _timing_row(unlock_remove_col, key)
         vbox.addWidget(unlock_remove_box)
 
@@ -96,12 +110,22 @@ class TimingsTabMixin:
         return self._timings_root
 
     def _load_timings_fields(self) -> None:
-        for key, spin in self._timing_spins.items():
-            spin.setValue(config.CFG.timings.get(key, farm_settings.TIMING_DEFAULTS[key]))
+        self._applying_timing_preset = True
+        try:
+            for key, spin in self._timing_spins.items():
+                spin.setValue(config.CFG.timings.get(key, farm_settings.TIMING_DEFAULTS[key]))
+        finally:
+            self._applying_timing_preset = False
+        self._detect_timing_preset()
 
     def _on_reset_timings(self) -> None:
-        for key, spin in self._timing_spins.items():
-            spin.setValue(farm_settings.TIMING_DEFAULTS[key])
+        self._applying_timing_preset = True
+        try:
+            for key, spin in self._timing_spins.items():
+                spin.setValue(farm_settings.TIMING_DEFAULTS[key])
+        finally:
+            self._applying_timing_preset = False
+        self._detect_timing_preset()
         self._timings_status.setText("Reset — click Save Timings to apply")
 
     def _on_save_timings(self) -> None:
@@ -111,11 +135,61 @@ class TimingsTabMixin:
         config.refresh_timings()
         self._timings_status.setText("Saved ✓")
 
+    def _detect_timing_preset(self) -> None:
+        current = {key: spin.value() for key, spin in self._timing_spins.items()}
+        self._applying_timing_preset = True
+        try:
+            for name, vals in farm_settings.TIMING_PRESETS.items():
+                if all(abs(current[k] - v) < 0.001 for k, v in vals.items()):
+                    self._timing_preset_combo.setCurrentText(name)
+                    return
+            self._timing_preset_combo.setCurrentText("Custom")
+        finally:
+            self._applying_timing_preset = False
+
+    def _on_timing_preset_change(self, name: str) -> None:
+        if self._applying_timing_preset or name not in farm_settings.TIMING_PRESETS:
+            return
+        vals = farm_settings.TIMING_PRESETS[name]
+        self._applying_timing_preset = True
+        try:
+            for key, spin in self._timing_spins.items():
+                spin.setValue(vals.get(key, farm_settings.TIMING_DEFAULTS[key]))
+        finally:
+            self._applying_timing_preset = False
+        self._on_save_timings()
+        self._timings_status.setText(f"{name} preset applied and saved ✓")
+
+    def _on_timing_value_changed(self) -> None:
+        if not self._applying_timing_preset:
+            self._detect_timing_preset()
+
     def _show_timing_info(self, key: str) -> None:
         label, text = _TIMING_INFO[key]
         dlg = QMessageBox(self)
         dlg.setWindowTitle(label)
         dlg.setText(f"<b>{label}</b>")
         dlg.setInformativeText(text)
+        dlg.setIcon(QMessageBox.Icon.Information)
+        dlg.exec()
+
+    def _show_timing_preset_info(self) -> None:
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Timing Preset")
+        dlg.setText("<b>Timing Preset</b>")
+        dlg.setInformativeText(
+            "Starting points for different PC speeds, not a guarantee — pick "
+            "the closest match, then still test and tune the longer loading "
+            "waits individually for your own PC (main menu into a challenge, "
+            "exiting a challenge back out, Free Roam into the House/Festival "
+            "site, retry, reset, a non-preloaded car).\n\n"
+            "Each of those waits has to land in a narrow window: too short "
+            "and a key press can land while the game is still mid-load and "
+            "just gets dropped (it only samples input once it's actually "
+            "rendering again); too long — especially for the challenge-load "
+            "wait — burns real seconds off the challenge's own countdown "
+            "before the farm even starts driving, and can waste an otherwise-"
+            "completable run."
+        )
         dlg.setIcon(QMessageBox.Icon.Information)
         dlg.exec()
