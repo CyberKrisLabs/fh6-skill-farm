@@ -156,8 +156,8 @@ def _wait_for_car_loaded() -> bool:
 
 
 # A single OCR read can misread a bad frame and miss the available-SP text
-# entirely (same reasoning as challenge.STUCK_CHECK_POLL_COUNT) — retry a
-# few times before giving up and proceeding without the SP-based correction.
+# entirely — retry a few times before giving up and proceeding without the
+# SP-based correction.
 # 3 rather than 5: detection got noticeably more reliable once the crop was
 # tightened to exclude the "Owned" row (see vision._read_available_sp), and
 # the post-spend second-chance check in run_unlock_iteration (see its

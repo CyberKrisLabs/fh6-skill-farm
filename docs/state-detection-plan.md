@@ -16,7 +16,9 @@ detected":
   `CAR_LOADED_MENU_KEYWORDS`), used in both `remove.py` and `unlock.py`
 - Challenge search found/not-found (`CHALLENGE_FOUND_KEYWORDS`)
 - The available-skill-points check (`_read_available_sp`)
-- The stuck-start speedometer check
+- The stuck-start speedometer check (since removed along with the rest of
+  the wrong-direction-restart handling — the currently farmed challenge
+  doesn't have that bug)
 
 Every one of these is a spot where the *duration was genuinely unpredictable*
 (loading takes however long it takes) or there's a *real fork in behavior*
@@ -66,30 +68,28 @@ careful about *how* each one gets converted:
    header, a tab name, whatever's stable once the site's UI is actually up.
 
 2. **`challenge.transition_to_challenge()` — `LOADING_CHALLENGE_WAIT`.** The
-   single longest wait in the app. Anchor idea: HUD/speedometer becoming
-   visible (car is drivable) — the speedometer OCR already built for the
-   stuck-check might be reusable here directly, rather than needing a brand
-   new anchor.
+   single longest wait in the app. Anchor idea: HUD becoming visible (car is
+   drivable) — would need a new anchor built for this, since the previous
+   candidate (reusing the stuck-check's speedometer OCR) no longer exists;
+   that check was removed when the farmed challenge switched to a track with
+   no wrong-direction-restart bug.
 
-3. **`challenge.run_challenge_iteration()` — `LOADING_RETRY_WAIT`** (three
-   call sites: Retry-via-Enter on a timeout, Retry-via-Escape on a finish,
-   and after `_reset_challenge()`). Same "is the car drivable again yet"
-   uncertainty as #2 — likely the same anchor works for all three.
+3. **`challenge.run_challenge_iteration()` — `LOADING_RETRY_WAIT`** (two call
+   sites: Retry-via-Enter on a timeout, Retry-via-Escape on a finish). Same
+   "is the car drivable again yet" uncertainty as #2 — likely the same anchor
+   works for both.
 
-4. **`challenge._reset_challenge()` — `LOADING_RESET_WAIT`.** Same family as
-   #3, the manual pause-menu-restart fallback path.
-
-5. **`challenge.run_challenge_iteration()` (final run) —
+4. **`challenge.run_challenge_iteration()` (final run) —
    `LOADING_AFTER_CHALLENGE_EXIT_WAIT`.** Already documented as "one of the
    longest waits" — landing back in Free Roam after Continue-ing out for the
    last time. Anchor idea: Free Roam HUD presence, or whatever `buy.py`'s
    very next transition already expects to see.
 
-6. **`orchestrator.py` (Remove phase tail) — `LOADING_EXIT_TO_GAME_WAIT`.**
+5. **`orchestrator.py` (Remove phase tail) — `LOADING_EXIT_TO_GAME_WAIT`.**
    Escaping the car menu back into Free Roam before navigating to Main
    Menu — already documented as varying by PC.
 
-7. **`remove._switch_to_multiplier_car()` — the hardcoded
+6. **`remove._switch_to_multiplier_car()` — the hardcoded
    `keys.mp("enter", wait=5)`** getting into the multiplier car. Not even a
    named constant, just an inline 5s guess — and it's the *exact same*
    preloaded-vs-not uncertainty already solved for Unlock
@@ -99,36 +99,33 @@ careful about *how* each one gets converted:
 
 ## Candidates: real forks currently handled by assumption/settings (lower priority)
 
-8. **The "What's Next" screen.** Currently gated behind a *user-configured
+7. **The "What's Next" screen.** Currently gated behind a *user-configured
    setting* (`whats_next_enabled`) instead of detecting whether that screen
    is actually showing. If there's a reliable anchor (distinctive
    button-bar text), this could become self-detecting instead of relying on
    the user to correctly tell the app about their own game settings — and it
    would stop mattering if someone toggles that game setting mid-session.
 
-9. **The "Rate Challenge?" prompt.** Same idea — currently sent
+8. **The "Rate Challenge?" prompt.** Same idea — currently sent
    unconditionally, relying on it being a harmless no-op when absent. Lower
-   priority than #8 since it isn't currently costing correctness, just a
+   priority than #7 since it isn't currently costing correctness, just a
    couple of no-op key presses.
 
 ## Not candidates (worth noting why, so this doesn't get relitigated later)
 
 The skill-tree walk (`ENTER_SKILL_TREE` / `EXIT_TO_CAR_LIST` /
-`UNLOCK_SEQUENCES`), `run_buy_iteration()` / `run_remove_iteration()`'s
-confirmation sequences, and the ease-in throttle taps
-(`CHALLENGE_START_*`) — all either static-menu navigation with no loading
-uncertainty (the menu structure is assumed stable, which is a cheap
-assumption to verify once and rarely breaks except on a game update, which
-would need a code fix either way), or — the throttle taps specifically —
-tuned car-physics timing with no meaningful screen-state to check against.
-These are easier to predict and much more likely to be the same across
+`UNLOCK_SEQUENCES`) and `run_buy_iteration()` / `run_remove_iteration()`'s
+confirmation sequences — static-menu navigation with no loading uncertainty
+(the menu structure is assumed stable, which is a cheap assumption to verify
+once and rarely breaks except on a game update, which would need a code fix
+either way). Easier to predict and much more likely to be the same across
 different PCs than a loading duration is, so converting them to detection
 would add OCR overhead and a new failure surface without fixing an actual
 uncertainty.
 
 ## Suggested next step
 
-Pick one candidate (probably #7, since it can likely reuse the existing
+Pick one candidate (probably #6, since it can likely reuse the existing
 `CAR_SHOWCASE_KEYWORDS`/`CAR_LOADED_MENU_KEYWORDS` pattern with the least new
 investigation), confirm the anchor works across at least two different
 PCs/resolutions, and convert just that one — rather than converting the

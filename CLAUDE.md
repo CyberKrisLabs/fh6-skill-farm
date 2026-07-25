@@ -129,56 +129,37 @@ pytest --cov --cov-report=term-missing
 
 ## Known Behaviors (don't "fix" these back)
 
-- **Stuck-start detection:** after certain mid-run restarts, FH6 can spawn the
-  car facing the wrong way. `challenge.run_challenge_iteration(check_stuck_start=True)`
-  OCRs the speedometer ~5s in and restarts immediately if it reads near-zero,
-  instead of waiting out the full ~45s challenge timer. Only checked on the run
-  *after* a failure — a clean first run has never shown this bug — and skipped
-  again immediately after a stuck-restart fires (confirmed to reliably fix the
-  direction, so re-checking the very next run would be wasted time).
-  `vision._speed_digit_readable()` distinguishes a confirmed "moving normally"
-  reading (an actual digit was OCR'd) from an inconclusive one (OCR only
-  caught the unit label, e.g. "MPH", with no digit at all — observed in the
-  field on a PC set to MPH instead of KM/H) — the latter still proceeds as
-  not-stuck (no digit to restart on), but logs a distinct `[WARN]` instead of
-  claiming a confirmation that didn't happen. `STUCK_SPEED_THRESHOLD = 10` was
-  considered for MPH vs KM/H specifically: a genuinely-moving car clears 10 in
-  either unit well before the check fires (STUCK_CHECK_DELAY_SECONDS in), so
-  one threshold covers both — no unit-specific tuning needed.
-  **Open investigation:** on that same MPH PC, `_read_speedometer_text()` has
-  also read back completely empty (not even "MPH") — confirmed the HUD layout
-  is pixel-identical to the working KM/H PC, so this isn't a fixed-crop-region
-  bug. Suspect DPI-scaling or window-detection differences between the two
-  machines affecting `_get_fh6_window_region()`'s pixel math, or an occasional
-  bad OCR frame — not yet root-caused. Tightened the crop from bottom/right
-  30% to 20% (the speedometer sits right in the corner) since less
-  surrounding HUD/track clutter in frame can improve small-text OCR
-  reliability — an attempted mitigation, not a confirmed fix.
-  `vision._read_speedometer_text()` also now logs the computed crop region +
-  detected window bounds whenever OCR reads back nothing, specifically so the
-  next occurrence gives concrete numbers to diagnose from (the user prefers
-  describing/pasting logs over screenshots).
+- **Removed (2026-07-25): stuck-start detection.** The farmed challenge was
+  switched to a new share code (Festival Drag Strip) that has never shown the
+  wrong-direction-restart bug the old challenge had — so the whole apparatus
+  for it was deleted rather than kept dormant: `challenge.run_challenge_iteration`'s
+  `check_stuck_start` param, `_reset_challenge()`, `STUCK_CHECK_*` constants,
+  `vision._read_speedometer_text()`/`_is_speed_zero()`/`_speed_digit_readable()`/
+  `STUCK_SPEED_THRESHOLD`, the `LOADING_RESET_WAIT` timing (Timings tab + Guide
+  tab entries, `farm_settings.TIMING_DEFAULTS`), and `orchestrator.py`'s
+  `retry_after_failure`/`_last_run_was_stuck_restart` plumbing around the
+  three challenge-loop call sites. If a future challenge share code brings
+  this bug back, re-add detection following the same shape (OCR the
+  speedometer a few seconds in, restart on a near-zero reading, skip the
+  check on the run right after a stuck-restart fires) rather than resurrecting
+  the deleted code verbatim — re-verify the field-tuned constants
+  (`STUCK_SPEED_THRESHOLD`, crop percentages, poll counts) against the new
+  track/resolution instead of assuming they still apply.
 - **Challenge end-screen ambiguity:** the two possible end screens (finished-on-time
   vs timed-out) have swapped Enter/Escape mappings. If OCR only catches "RETRY"
   (common to both) without "CONTINUE" or "QUIT" — **or catches none of the three
-  at all** — the code assumes the failed/timed-out layout and presses Enter,
-  never `_reset_challenge()`'s pause-menu sequence (Escape first). By the time
-  this check runs, the ~45s challenge timer has already elapsed, so some end
-  screen is almost certainly showing — `_reset_challenge()` is for the
-  *different*, still-mid-race stuck-start case (see below), and its first
-  press (Escape) would hit Quit on the actual end screen and exit the
-  challenge entirely instead of retrying (confirmed happening in the field —
-  don't reintroduce the `_reset_challenge()` call for the "OCR caught nothing"
-  case).
+  at all** — the code assumes the failed/timed-out layout and presses Enter, never
+  a pause-menu-restart sequence (Escape first). By the time this check runs, the
+  challenge timer (~38s on the current track) has already elapsed, so some end
+  screen is almost certainly showing — an Escape-first recovery would hit Quit on
+  the actual end screen and exit the challenge entirely instead of retrying
+  (confirmed happening in the field, back when this path could still fire the
+  now-removed stuck-start restart sequence, which opened with Escape) — don't
+  reintroduce an Escape-first recovery call for the "OCR caught nothing" case.
 - **Car Collection / multiplier-car position fields are 1-based in the UI, 0-based
   in storage**, and 0 is a *legitimate* real position (top-left / first row) — not
   a usable "unset" sentinel. Whether these are configured is tracked by explicit
   `*_configured` boolean flags, not by checking for a zero value.
-- **Ease-in W-tap sequence** (`CHALLENGE_START_*` constants in `challenge.py`) exists
-  specifically to avoid overshooting an early jump — flooring the throttle from a
-  dead stop clears it too fast. These constants are tuned per-account/track and
-  are not exposed in the Timings tab (unlike the `LOADING_*`/`*_WAIT` constants,
-  which are).
 - **Post-challenge "Rate Challenge?" prompt:** on the *final* run of the challenge
   phase, FH6 shows a Like/Dislike/Cancel prompt after Continue-ing out — for
   everyone except whoever's account owns `config.CHALLENGE_SHARE_CODE`. Handled
@@ -228,25 +209,24 @@ pytest --cov --cov-report=term-missing
   running FH6 at 1024x768. Every other timing is left at `TIMING_DEFAULTS`
   across all three tiers deliberately; don't invent variance for the rest
   without a real measured data point to back it.
-- Small-HUD OCR reads (speedometer stuck-check, available-SP check during
-  Unlock) are inherently less reliable at low game resolutions than large
-  end-screen text — there are fewer real source pixels to work with, and the
-  2x cubic upscale in `vision._winrt_ocr_async` smooths the image but can't
-  recover detail that was never captured. `STUCK_CHECK_POLL_COUNT` (5) /
-  `SP_CHECK_POLL_COUNT` (3, plus a post-spend second chance — see below)
-  exist to paper over this with retries, not fix it outright — don't be
-  surprised if a low-resolution setup still logs an occasional failed read;
-  both call sites already fall back to a safe default (proceed as not-stuck
-  / proceed without the SP correction) when every attempt comes back empty.
+- Small-HUD OCR reads (available-SP check during Unlock) are inherently less
+  reliable at low game resolutions than large end-screen text — there are
+  fewer real source pixels to work with, and the 2x cubic upscale in
+  `vision._winrt_ocr_async` smooths the image but can't recover detail that
+  was never captured. `SP_CHECK_POLL_COUNT` (3, plus a post-spend second
+  chance — see below) exists to paper over this with retries, not fix it
+  outright — don't be surprised if a low-resolution setup still logs an
+  occasional failed read; the check already falls back to a safe default
+  (proceed without the SP correction) when every attempt comes back empty.
   Field-tested resolution/aspect findings,
   one account/PC: (2026-07-21) 1024x768 (4:3) unreliable in both windowed
   and fullscreen, including outright digit misreads (not just empty reads —
   199 SP once read back as 10); 1280x720 (16:9) borderline/inconsistent
   (worked in some windowed and fullscreen tries, misread in others); 1920x1080
   (16:9) read cleanly in both windowed and fullscreen every time tried.
-  (2026-07-22, after the SP_CHECK_POLL_COUNT bump to 5 and the tighter
-  speedometer crop) 1280x768 also read reliably in further testing, and a
-  fresh 1280x720 misread (173 read as 10) turned out — once
+  (2026-07-22, after the SP_CHECK_POLL_COUNT bump to 5) 1280x768 also read
+  reliably in further testing, and a fresh 1280x720 misread (173 read as 10)
+  turned out — once
   `_read_available_sp()` started logging its crop region + window bounds on
   success too, not just failure (see below) — to be explained by window
   size, not resolution or aspect ratio: same 1280x720 *setting* in both
@@ -263,10 +243,9 @@ pytest --cov --cov-report=term-missing
   page.
 - `vision._read_available_sp()` logs its crop region, window bounds, and
   resolution/DPI numbers (`_window_diagnostic_info()`) on a *successful*
-  read too, not just on failure (mirrors `_read_speedometer_text()`'s
-  failure-only diagnostic, extended one step further) — this is what let a
-  windowed-vs-fullscreen misread be root-caused directly from user-supplied
-  logs (see above) instead of guessed at from a single failure line alone.
+  read too, not just on failure — this is what let a windowed-vs-fullscreen
+  misread be root-caused directly from user-supplied logs (see above)
+  instead of guessed at from a single failure line alone.
 - **Skill-point icon fusing onto the number as an in-range false reading:**
   the skill-point icon directly after the "Available Points" number
   sometimes OCRs as a fused trailing zero (e.g. real 95 SP read as "950")
@@ -375,9 +354,9 @@ pytest --cov --cov-report=term-missing
   same wrong value ("10"), across sessions with different true SP totals
   (999 and 960) and identical crop/window coordinates both times — ruling
   out "random bad OCR frame" (which would vary) in favor of a deterministic
-  misread of unchanging pixels. Unlike the speedometer check (retries
-  against a live, changing race scene — each attempt is a genuinely fresh
-  frame), nothing changes on a paused skill-tree screen between one
+  misread of unchanging pixels. Unlike the now-removed speedometer stuck-check
+  (retried against a live, changing race scene — each attempt was a genuinely
+  fresh frame), nothing changes on a paused skill-tree screen between one
   screenshot and the next, so retrying just re-runs OCR on identical input
   and gets the identical (wrong) answer every time. Fixed by giving
   `run_unlock_iteration()` a genuine second chance instead of just more

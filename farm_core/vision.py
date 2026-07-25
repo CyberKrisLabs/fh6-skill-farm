@@ -13,7 +13,7 @@ import pyautogui
 
 _winrt_ocr_ok: bool | None = None
 
-# The challenge always ends by ~45s (finished early, or forced by the timer) —
+# The challenge always ends by ~38s (finished early, or forced by the timer) —
 # one of two end screens is guaranteed to be showing. "RETRY" is common to
 # both; "CONTINUE" / "QUIT" distinguish which one it is (see
 # farm_core.challenge.run_challenge_iteration).
@@ -34,21 +34,6 @@ CHALLENGE_FOUND_KEYWORDS = {"SELECT"}
 # keyword sets instead of guessing a fixed wait.
 CAR_SHOWCASE_KEYWORDS = {"EXPLODE", "PHOTO", "TOGGLE"}
 CAR_LOADED_MENU_KEYWORDS = {"FORZAVISTA", "HOME", "UPDATE"}
-
-# The digital speedometer font gets misread as look-alike letters at this
-# resolution (observed: "000" → "OOÖ"). Normalize those to "0" before
-# checking — a token only counts if it's ALL zero/lookalike chars, so real
-# speed values (e.g. "060") are never mistaken for stationary.
-_ZERO_LOOKALIKES = str.maketrans({"O": "0", "o": "0", "Ö": "0", "ö": "0", "Q": "0", "D": "0"})
-
-# By STUCK_CHECK_DELAY_SECONDS in (see farm_core.challenge), a car that's
-# actually moving has cleared 10+ — so the tens digit is the reliable signal.
-# The units digit is noisy (observed misread "000" as "007"), so don't
-# require an exact 0 there. Considered whether this needs to differ for a
-# speedometer set to MPH instead of KM/H: it doesn't — a genuinely-moving car
-# clears 10 in either unit well before this check fires, so one threshold
-# covers both.
-STUCK_SPEED_THRESHOLD = 10
 
 
 def _winrt_available() -> bool:
@@ -334,7 +319,7 @@ def _read_challenge_end_text() -> str:
 
     The challenge has two possible end screens with SWAPPED key mappings:
       finished on time: Continue (enter) | Retry (escape)
-      timed out (45s cap hit without finishing): Retry (enter) | Quit (escape)
+      timed out (38s cap hit without finishing): Retry (enter) | Quit (escape)
     "RETRY" appears on both — only "CONTINUE" / "QUIT" distinguish which screen it is.
     """
     if not _winrt_available():
@@ -351,52 +336,3 @@ def _read_challenge_end_text() -> str:
     except Exception as exc:
         print(f"[WARN] OCR error: {exc}")
         return ""
-
-
-def _read_speedometer_text() -> str:
-    """OCR the bottom-right corner of the game window (speedometer area).
-
-    Bottom 20% / right 20% — tight around the speedometer, which sits right
-    in the corner. Tighter than SP/challenge-end crops on purpose: less
-    surrounding HUD/track clutter in frame improves small-text OCR reliability
-    for this particular reading. Used to detect a stuck, wrong-direction start
-    (see farm_core.challenge.STUCK_CHECK_DELAY_SECONDS) — speed reads "000"
-    while the car isn't moving.
-    """
-    if not _winrt_available():
-        return ""
-    win = _get_fh6_window_region()
-    if win is None:
-        pw, ph = pyautogui.size()
-        win = (0, 0, pw, ph)
-    wx, wy, ww, wh = win
-    top = int(wh * 0.80)  # bottom 20%
-    left = int(ww * 0.80)  # right 20%
-    region = (wx + left, wy + top, ww - left, wh - top)
-    img = pyautogui.screenshot(region=region)
-    try:
-        text = asyncio.run(_winrt_ocr_async(img)).upper()
-    except Exception as exc:
-        print(f"[WARN] OCR error (speed check): {exc}")
-        return ""
-    if not text.strip():
-        print("[WARN] Speedometer OCR returned nothing")
-    return text
-
-
-def _is_speed_zero(text: str) -> bool:
-    """True if the speedometer OCR reads under STUCK_SPEED_THRESHOLD (car effectively stationary)."""
-    for tok in text.split():
-        normalized = tok.translate(_ZERO_LOOKALIKES)
-        if normalized.isdigit() and int(normalized) < STUCK_SPEED_THRESHOLD:
-            return True
-    return False
-
-
-def _speed_digit_readable(text: str) -> bool:
-    """True if text contains an actual speed digit — as opposed to only the
-    unit label (e.g. "MPH"/"KM/H") with no number, which happens when OCR
-    misses the digits entirely. Used to tell a confirmed "moving normally"
-    reading apart from an inconclusive one that just defaulted to not-stuck.
-    """
-    return any(tok.translate(_ZERO_LOOKALIKES).isdigit() for tok in text.split())

@@ -30,8 +30,7 @@ LOADING_AFTER_CHALLENGE_EXIT_WAIT = 18  # Wait after exiting a finished challeng
 # on a slower PC), hence the higher default with margin built in.
 LOADING_TRAVEL_WAIT = 10
 LOADING_CHALLENGE_WAIT = 25  # Wait for challenge to load from Main Menu (longer than normal loading)
-LOADING_RETRY_WAIT = 25  # Wait after escape (retry challenge) until the next run is drivable
-LOADING_RESET_WAIT = 20  # Wait after a pause-menu restart (failed run recovery)
+LOADING_RETRY_WAIT = 23.5  # Wait after escape (retry challenge) until the next run is drivable
 LOADING_EXIT_TO_GAME_WAIT = 9  # Wait after escaping the car menu back into Free Roam
 
 # ── Configuration ──────────────────────────────────────────────────────────────
@@ -39,7 +38,7 @@ LOADING_EXIT_TO_GAME_WAIT = 9  # Wait after escaping the car menu back into Free
 # tab control ever writes these), so they're hardcoded here rather than in
 # farm_settings.py, same reasoning as farm_settings.CAR_CATALOG.
 SKILL_POINTS_CAP = 999  # challenge farm target (game cap)
-CHALLENGE_SHARE_CODE = "661885885"  # share code for the challenge used to farm skill points
+CHALLENGE_SHARE_CODE = "159742529"  # share code for the challenge used to farm skill points
 POINTS_PER_CHALLENGE = 10  # points earned per run, with the 9x multiplier car active — verify in-game
 
 # Session logs (see orchestrator.run_farm) — same app-data directory as settings,
@@ -80,7 +79,7 @@ def refresh_timings() -> None:
     """Apply CFG.timings overrides onto the wait constants. Call after changing/saving settings."""
     global MENU_WAIT, NAV_WAIT, PAGE_WAIT, TYPING_WAIT
     global LOADING_AFTER_CHALLENGE_EXIT_WAIT, LOADING_TRAVEL_WAIT, LOADING_CHALLENGE_WAIT, LOADING_RETRY_WAIT
-    global LOADING_RESET_WAIT, LOADING_EXIT_TO_GAME_WAIT
+    global LOADING_EXIT_TO_GAME_WAIT
     t = CFG.timings
     MENU_WAIT = t.get("MENU_WAIT", MENU_WAIT)
     NAV_WAIT = t.get("NAV_WAIT", NAV_WAIT)
@@ -90,7 +89,6 @@ def refresh_timings() -> None:
     LOADING_TRAVEL_WAIT = t.get("LOADING_TRAVEL_WAIT", LOADING_TRAVEL_WAIT)
     LOADING_CHALLENGE_WAIT = t.get("LOADING_CHALLENGE_WAIT", LOADING_CHALLENGE_WAIT)
     LOADING_RETRY_WAIT = t.get("LOADING_RETRY_WAIT", LOADING_RETRY_WAIT)
-    LOADING_RESET_WAIT = t.get("LOADING_RESET_WAIT", LOADING_RESET_WAIT)
     LOADING_EXIT_TO_GAME_WAIT = t.get("LOADING_EXIT_TO_GAME_WAIT", LOADING_EXIT_TO_GAME_WAIT)
 
 

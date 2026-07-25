@@ -158,8 +158,8 @@ class GuideTabMixin:
             "engine turns out to matter more than the game's resolution "
             "setting: Windows stretches the game's internal render to "
             "whatever size the window is drawn at, so a small windowed "
-            "game gets fewer real captured pixels for small HUD text (the "
-            "speedometer, available skill points) than the same resolution "
+            "game gets fewer real captured pixels for small HUD text "
+            "(available skill points) than the same resolution "
             "setting run fullscreen — field-tested back-to-back at the "
             "identical 1280x720 setting, a small window misread available "
             "skill points (173 read as 10) while fullscreen read it "
@@ -185,7 +185,6 @@ class GuideTabMixin:
             "LOADING_AFTER_CHALLENGE_EXIT_WAIT",
             "LOADING_TRAVEL_WAIT",
             "LOADING_RETRY_WAIT",
-            "LOADING_RESET_WAIT",
         ):
             label, text = TIMING_INFO[key]
             _add_subhead(root, label)

@@ -60,15 +60,11 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
             else:
                 print(f"Phase: CHALLENGE — {challenge_iters} challenges (buffer disabled)")
             completed = 0
-            retry_after_failure = False
             while completed < challenge_iters and not keys._stop_event.is_set():
                 _label = f"{completed + 1}/{challenge_iters}"
                 print(f"  Challenge {_label}")
                 _report_progress("challenge", completed + 1, challenge_iters)
-                success = challenge.run_challenge_iteration(
-                    final=completed + 1 == challenge_iters, label=_label, check_stuck_start=retry_after_failure
-                )
-                retry_after_failure = not success and not challenge._last_run_was_stuck_restart
+                success = challenge.run_challenge_iteration(final=completed + 1 == challenge_iters, label=_label)
                 if success:
                     completed += 1
                 else:
@@ -81,15 +77,11 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
                 f"{iterations} challenges to reach {config.SKILL_POINTS_CAP}"
             )
             completed = 0
-            retry_after_failure = False
             while completed < iterations and not keys._stop_event.is_set():
                 _label = f"{completed + 1}/{iterations}"
                 print(f"  Challenge {_label}")
                 _report_progress("challenge", completed + 1, iterations)
-                success = challenge.run_challenge_iteration(
-                    final=completed + 1 == iterations, label=_label, check_stuck_start=retry_after_failure
-                )
-                retry_after_failure = not success and not challenge._last_run_was_stuck_restart
+                success = challenge.run_challenge_iteration(final=completed + 1 == iterations, label=_label)
                 if success:
                     completed += 1
                 else:
@@ -97,13 +89,11 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
         else:
             print("Phase: CHALLENGE — running until interrupted (Ctrl+C to stop).")
             i = 0
-            retry_after_failure = False
             while not keys._stop_event.is_set():
                 i += 1
                 print(f"  Challenge {i}")
                 _report_progress("challenge", i, 0)
-                success = challenge.run_challenge_iteration(label=str(i), check_stuck_start=retry_after_failure)
-                retry_after_failure = not success and not challenge._last_run_was_stuck_restart
+                success = challenge.run_challenge_iteration(label=str(i))
                 if not success:
                     print("  [RESET] Challenge not counted")
                     i -= 1

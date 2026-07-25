@@ -45,7 +45,10 @@ _CHALLENGE_START_SP_CAP = 990
 # 2026-07-20, post-tuning race flow — CHALLENGE_HOLD_SECONDS=27 + ease-in taps).
 # _SECS_TRANS_INIT has no fresh data (that run started from "buy", not "main")
 # and is left at its prior estimate.
-_SECS_PER_CHALLENGE = 59.5  # one challenge run — ~90 clean samples, tight 58-63s band
+# Festival Drag Strip challenge, 2026-07-25 log — 16 clean back-to-back
+# samples, tight 47-49s band, post CHALLENGE_HOLD_SECONDS=35/
+# CHALLENGE_CHECK_DELAY=5/LOADING_RETRY_WAIT=23.5 tuning.
+_SECS_PER_CHALLENGE = 47.9  # one challenge run
 _SECS_PER_BUY = 2.5  # one car purchase
 _SECS_PER_UNLOCK = 39.0  # one car skill unlock — exact every steady-state iteration
 _SECS_PER_REMOVE = 3.0  # one car removal — exact every iteration

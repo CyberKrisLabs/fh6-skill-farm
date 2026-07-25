@@ -14,14 +14,17 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "switched it for you yet, so if you're not already driving it, this "
         "run won't get the multiplier and your skill point math will be "
         "off.\n\n"
-        "Also make sure Transmission is set to Automatic — the ease-in "
-        "throttle sequence and hold timings are tuned for automatic "
+        "Also check Settings → Difficulty: Steering must NOT be set to "
+        '"Auto-Steering" — on this challenge\'s drag strip layout, '
+        "auto-steering turns the car into the wall, and the resulting wall "
+        "friction slows it down for the rest of the run. Shifting must be set "
+        "to Automatic — the throttle hold and timings are tuned for automatic "
         "shifting, and manual changes acceleration behavior enough to throw "
-        "them off.\n\n"
+        "them off. No other difficulty/assist settings need to be touched.\n\n"
         "And make sure Auto Drive is turned off — it shows a prompt right at "
         "the start of the challenge and drives the car itself, which "
-        "interferes with the ease-in throttle sequence and isn't a screen "
-        "the farm knows how to handle.\n\n"
+        "interferes with the farm holding the throttle itself and isn't a "
+        "screen the farm knows how to handle.\n\n"
         "In the game, while in Free Roam, press Escape to open the Main "
         'Menu. The tab should be on the first tab, "Campaign".\n\n'
         "The tool will navigate from there to the challenge.",
@@ -35,14 +38,17 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "switched it for you yet, so if you're not already driving it, this "
         "run won't get the multiplier and your skill point math will be "
         "off.\n\n"
-        "Also make sure Transmission is set to Automatic — the ease-in "
-        "throttle sequence and hold timings are tuned for automatic "
+        "Also check Settings → Difficulty: Steering must NOT be set to "
+        '"Auto-Steering" — on this challenge\'s drag strip layout, '
+        "auto-steering turns the car into the wall, and the resulting wall "
+        "friction slows it down for the rest of the run. Shifting must be set "
+        "to Automatic — the throttle hold and timings are tuned for automatic "
         "shifting, and manual changes acceleration behavior enough to throw "
-        "them off.\n\n"
+        "them off. No other difficulty/assist settings need to be touched.\n\n"
         "And make sure Auto Drive is turned off — it shows a prompt right at "
         "the start of the challenge and drives the car itself, which "
-        "interferes with the ease-in throttle sequence and isn't a screen "
-        "the farm knows how to handle.\n\n"
+        "interferes with the farm holding the throttle itself and isn't a "
+        "screen the farm knows how to handle.\n\n"
         "The challenge starts driving immediately — there's no Enter press to "
         "kick it off — so you need to already be inside the challenge yourself "
         "before starting here. Enter it manually using the share code from the "
@@ -51,8 +57,8 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "and stop the challenge timer. Click Start here, then try to hit "
         "Escape again (to go back to a drivable state) just as the countdown "
         "gets close to 0.\n\n"
-        "Since the challenge is time-based (max 45s), don't start from here if "
-        "more than 15 seconds of the challenge have already passed.",
+        "Since the challenge is time-based (max 38s), don't start from here if "
+        "more than 10 seconds of the challenge have already passed.",
     ),
     "buy": (
         "Buy",
@@ -245,7 +251,7 @@ TIMING_INFO: dict[str, tuple[str, str]] = {
         "results, while it loads — the Main Menu → Challenge transition.\n\n"
         "One of the longest waits in the farm, since it covers an actual level "
         "load rather than a menu animation. Raise it if the challenge doesn't "
-        "auto-start driving in time for the ease-in sequence.\n\n"
+        "auto-start driving in time for the throttle hold.\n\n"
         "Too high has a real cost, not just wasted time: this wait doesn't "
         "pause the challenge's own countdown, so once the level has actually "
         "finished loading, every extra second spent still waiting is a second "
@@ -278,17 +284,8 @@ TIMING_INFO: dict[str, tuple[str, str]] = {
         "The wait (in seconds) after pressing Retry — whether the run finished "
         "on time (Retry via escape) or timed out (Retry via enter) — until the "
         "next challenge run is actually drivable.\n\n"
-        "Raise it if the ease-in W-taps at the start of the next run seem to "
-        "fire before the car is actually loaded in and controllable.",
-    ),
-    "LOADING_RESET_WAIT": (
-        "Loading Reset Wait",
-        "The wait (in seconds) after a manual pause-menu restart — the fallback "
-        "recovery used when the end-of-challenge screen can't be identified at "
-        "all (not even a Retry button).\n\n"
-        "A rare path, but since it involves a fuller reload than a normal Retry, "
-        "it gets a longer wait. Raise it if runs recovered this way come out "
-        "stuck or in a bad state.",
+        "Raise it if the farm starts holding W for the next run before the car "
+        "is actually loaded in and controllable.",
     ),
     "LOADING_EXIT_TO_GAME_WAIT": (
         "Loading Exit To Game Wait",

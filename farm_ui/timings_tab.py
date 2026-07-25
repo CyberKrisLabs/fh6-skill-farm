@@ -77,7 +77,6 @@ class TimingsTabMixin:
             "LOADING_AFTER_CHALLENGE_EXIT_WAIT",
             "LOADING_TRAVEL_WAIT",
             "LOADING_RETRY_WAIT",
-            "LOADING_RESET_WAIT",
         ):
             _timing_row(challenge_col, key)
         vbox.addWidget(challenge_box)

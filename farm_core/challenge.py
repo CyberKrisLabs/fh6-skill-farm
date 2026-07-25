@@ -5,13 +5,13 @@ The 9x multiplier car must be the active car BEFORE joining — its skill-tree
 perks apply even though the challenge forces its own car while driving.
 
 The challenge auto-starts after loading (no enter needed) and always ends by
-~45s — either finished early, or forced to stop by the timer. Since the end
-time is known, we poll for an early "finished" (CONTINUE) detection every
-CHALLENGE_POLL_INTERVAL secs instead of always waiting the full
-CHALLENGE_CHECK_DELAY — most runs finish well before the hard cap. Polling
-stops CHALLENGE_POLL_MARGIN secs before the ~48s mark so it doesn't race the
-final check there, which still runs as a fallback (unchanged from before).
-The two possible end screens have SWAPPED key mappings:
+~38s — either finished early (typically ~21-23s in), or forced to stop by the
+timer. W is held solid from the start (no jump on this track, so no ease-in
+needed) through CHALLENGE_POLL_START_DELAY, then polled for an early
+"finished" (CONTINUE) detection every CHALLENGE_POLL_INTERVAL secs — while
+still holding W — up to CHALLENGE_HOLD_SECONDS, and again after release for up
+to CHALLENGE_CHECK_DELAY more before the final check, which still runs as a
+fallback. The two possible end screens have SWAPPED key mappings:
   finished on time: Continue (enter) | Retry (escape) — Retry grants SP
   timed out:        Retry (enter)    | Quit (escape)
 Timing out is treated like a failed run: always retry (never Quit), even on
@@ -24,10 +24,14 @@ import pyautogui
 
 from farm_core import config, keys, vision
 
-CHALLENGE_HOLD_SECONDS = 27  # hold W this long — challenge typically finishes around here
-CHALLENGE_CHECK_DELAY = 12  # additional wait after release before the final check (~48s total; hard 45s cap)
-CHALLENGE_POLL_INTERVAL = 1  # early-finish poll cadence during CHALLENGE_CHECK_DELAY
-CHALLENGE_POLL_MARGIN = 3  # stop early polling this long before the final ~48s check (avoid racing it)
+CHALLENGE_POLL_START_DELAY = (
+    20  # start polling for early finish this long into the hold (typically finishes ~21-23s in)
+)
+# 12-14s of slack past the typical ~21-23s finish — mainly for wall-hit runs
+# (friction from clipping the wall slows the car enough to delay finishing).
+CHALLENGE_HOLD_SECONDS = 35  # max time to hold W before releasing regardless of poll result
+CHALLENGE_CHECK_DELAY = 5  # additional wait/poll after release before the final check (~40s total; hard 38s cap)
+CHALLENGE_POLL_INTERVAL = 1  # poll cadence, both during the hold (after CHALLENGE_POLL_START_DELAY) and after release
 
 # FH6 shows a "Rate Challenge?" (Like / Dislike / Cancel) prompt after
 # Continue-ing out of a challenge you didn't create yourself — i.e. for every
@@ -59,60 +63,8 @@ WHATS_NEXT_EXIT_WAIT = 5  # settle time after backing out of the "What's Next" s
 # nag never appears, since the game's already past this into a loading screen.
 CHANGE_WHATS_NEXT_PROMPT_WAIT = 1  # settle time before checking for the nag prompt
 
-# ⚠ TUNING: flooring W solid from the start overshoots an early jump (~5-10s
-# in). Ease in with a short hold, then a stutter of taps, before the main
-# hold below. Adjust these until the car clears the jump at a sane speed.
-CHALLENGE_START_HOLD_SECONDS = 1.5  # initial solid W hold
-CHALLENGE_START_TAP_HOLD = 1  # each stutter tap's hold duration
-CHALLENGE_START_TAP_PAUSE = 1  # released pause between stutter taps
-CHALLENGE_START_TAP_COUNT = 2  # number of stutter taps
-CHALLENGE_START_LAST_TAP_PAUSE = 1.5  # longer released pause after the final tap, before the main hold
 
-# FH6 bug: after certain mid-run restarts the car can spawn facing the wrong
-# way — throttle does nothing, and previously we'd only find out ~45s later
-# when the challenge times out. STUCK_CHECK_DELAY_SECONDS after the challenge
-# starts, we OCR the speedometer; "000" means stuck, and we restart right away
-# instead of waiting out the timer. Only checked on a retry following a
-# previous failure — a clean first run has never shown this bug.
-STUCK_CHECK_DELAY_SECONDS = 5
-# A single OCR read can misread a bad frame and miss a real stuck start (no
-# retry to fall back on, unlike the end-of-race detection). Take a few samples
-# instead — any one reading near-zero is enough to call it stuck. At low game
-# resolutions (e.g. 1024x768) the speedometer digits carry too few real source
-# pixels for WinRT OCR to resolve consistently — reads at that resolution have
-# been observed to swing between empty, partial, and fully correct across
-# samples in the same run, so more samples measurably improve the odds of
-# catching a good one (the built-in 2x upscale in vision._winrt_ocr_async
-# smooths the image but can't recover detail that was never captured).
-STUCK_CHECK_POLL_COUNT = 5
-STUCK_CHECK_POLL_INTERVAL = 1
-
-# Set by run_challenge_iteration when it just fixed a stuck start via restart.
-# The restart itself reliably re-orients the car (confirmed in testing), so
-# farm_core.orchestrator.run_phase uses this to skip the stuck check on the
-# very next run instead of re-checking a run that's already known-good.
-_last_run_was_stuck_restart = False
-
-
-def _reset_challenge() -> None:
-    """Recover after a failed challenge run (car off-track / didn't finish)."""
-    keys.mp("escape")
-    keys._sleep(1)
-    if keys._stop_event.is_set():
-        return
-    keys.mp("left", wait=config.NAV_WAIT)
-    keys._sleep(config.MENU_WAIT)
-    if keys._stop_event.is_set():
-        return
-    keys.mp("enter")
-    keys._sleep(1)
-    if keys._stop_event.is_set():
-        return
-    keys.mp("enter")
-    keys._sleep(config.LOADING_RESET_WAIT)
-
-
-def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_start: bool = False) -> bool:
+def run_challenge_iteration(final: bool = False, label: str = "") -> bool:
     """Run one challenge. Returns True on success, False if it needs to be retried (no SP earned).
 
     final: on the last run of the phase, press enter (Continue) to exit the
@@ -127,103 +79,53 @@ def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_st
     WHATS_NEXT_EXIT_WAIT / CHANGE_WHATS_NEXT_PROMPT_WAIT above.
     label: the "N/total" (or "N") text already printed for this run, echoed
     back in the finish/timeout log lines so they're identifiable.
-    check_stuck_start: pass True when this run follows a failed one — polls the
-    speedometer (up to STUCK_CHECK_POLL_COUNT samples) starting at
-    STUCK_CHECK_DELAY_SECONDS in, and restarts immediately if any sample reads
-    near-zero (wrong-direction spawn bug) instead of waiting out the full
-    challenge timer. Sets the module-level _last_run_was_stuck_restart flag
-    when it does so — callers should skip the check on the next run rather
-    than passing check_stuck_start again (the restart already fixes the
-    direction, confirmed in testing).
     """
-    global _last_run_was_stuck_restart
-    _last_run_was_stuck_restart = False
     tag = f"Challenge {label}" if label else "Challenge"
-    ease_in_elapsed = 0.0
 
-    # Ease in instead of flooring it — avoids overshooting the early jump.
+    # No early jump on this track — floor it straight from the start instead
+    # of easing in. Hold through CHALLENGE_POLL_START_DELAY untouched (the
+    # challenge can't finish before then), then keep holding while polling for
+    # an early finish so accelerating isn't interrupted mid-poll.
     pyautogui.keyDown("w")
-    keys._sleep(CHALLENGE_START_HOLD_SECONDS)
-    pyautogui.keyUp("w")
-    ease_in_elapsed += CHALLENGE_START_HOLD_SECONDS
-    if keys._stop_event.is_set():
-        return False
-    for tap in range(1, CHALLENGE_START_TAP_COUNT + 1):
-        pyautogui.keyDown("w")
-        keys._sleep(CHALLENGE_START_TAP_HOLD)
-        pyautogui.keyUp("w")
-        ease_in_elapsed += CHALLENGE_START_TAP_HOLD
-        is_last_tap = tap == CHALLENGE_START_TAP_COUNT
-        pause = CHALLENGE_START_LAST_TAP_PAUSE if is_last_tap else CHALLENGE_START_TAP_PAUSE
-        keys._sleep(pause)
-        ease_in_elapsed += pause
-        if keys._stop_event.is_set():
-            return False
-
-    if check_stuck_start:
-        remaining = STUCK_CHECK_DELAY_SECONDS - ease_in_elapsed
-        if remaining > 0:
-            keys._sleep(remaining)
-        if keys._stop_event.is_set():
-            return False
-        stuck = False
-        any_digit_read = False
-        speed_text = ""
-        for sample in range(STUCK_CHECK_POLL_COUNT):
-            speed_text = vision._read_speedometer_text()
-            if vision._is_speed_zero(speed_text):
-                stuck = True
-                break
-            if vision._speed_digit_readable(speed_text):
-                any_digit_read = True
-            if sample < STUCK_CHECK_POLL_COUNT - 1:
-                keys._sleep(STUCK_CHECK_POLL_INTERVAL)
-                if keys._stop_event.is_set():
-                    return False
-        if stuck:
-            print(f"  [WARN] {tag} appears stuck (wrong-direction start) — restarting now")
-            _reset_challenge()
-            _last_run_was_stuck_restart = True
-            return False
-        if any_digit_read:
-            print(f"  [INFO] {tag} stuck-check: moving normally (speed read {speed_text!r})")
-        else:
-            print(
-                f"  [WARN] {tag} stuck-check: never read a speed digit in {STUCK_CHECK_POLL_COUNT} "
-                f"samples (last read {speed_text!r}) — proceeding as not stuck, but this wasn't confirmed"
-            )
-
-    pyautogui.keyDown("w")
-    keys._sleep(CHALLENGE_HOLD_SECONDS)
-    pyautogui.keyUp("w")
-    if keys._stop_event.is_set():
-        return False
-
-    # Poll for an early finish instead of always waiting the full delay — check
-    # immediately on release, then every CHALLENGE_POLL_INTERVAL secs.
-    finished_early = False
     elapsed = 0.0
-    poll_deadline = CHALLENGE_CHECK_DELAY - CHALLENGE_POLL_MARGIN
-    if "CONTINUE" in vision._read_challenge_end_text():
-        print(f"  [INFO] {tag} finished successfully")
-        finished_early = True
-    while not finished_early and elapsed < poll_deadline:
-        step = min(CHALLENGE_POLL_INTERVAL, poll_deadline - elapsed)
+    while elapsed < CHALLENGE_POLL_START_DELAY:
+        step = min(CHALLENGE_POLL_INTERVAL, CHALLENGE_POLL_START_DELAY - elapsed)
         keys._sleep(step)
         elapsed += step
         if keys._stop_event.is_set():
+            pyautogui.keyUp("w")
             return False
+
+    finished_early = False
+    while elapsed < CHALLENGE_HOLD_SECONDS:
         if "CONTINUE" in vision._read_challenge_end_text():
-            print(f"  [INFO] {tag} finished successfully")
             finished_early = True
             break
-
-    if not finished_early:
-        remaining = CHALLENGE_CHECK_DELAY - elapsed
-        if remaining > 0:
-            keys._sleep(remaining)
+        step = min(CHALLENGE_POLL_INTERVAL, CHALLENGE_HOLD_SECONDS - elapsed)
+        keys._sleep(step)
+        elapsed += step
         if keys._stop_event.is_set():
+            pyautogui.keyUp("w")
             return False
+    pyautogui.keyUp("w")
+    if finished_early:
+        print(f"  [INFO] {tag} finished successfully")
+
+    # Still not finished by CHALLENGE_HOLD_SECONDS — keep polling a bit longer
+    # after release before the final check (~CHALLENGE_HOLD_SECONDS +
+    # CHALLENGE_CHECK_DELAY total; hard 38s cap on this track).
+    if not finished_early:
+        check_elapsed = 0.0
+        while not finished_early and check_elapsed < CHALLENGE_CHECK_DELAY:
+            step = min(CHALLENGE_POLL_INTERVAL, CHALLENGE_CHECK_DELAY - check_elapsed)
+            keys._sleep(step)
+            check_elapsed += step
+            if keys._stop_event.is_set():
+                return False
+            if "CONTINUE" in vision._read_challenge_end_text():
+                print(f"  [INFO] {tag} finished successfully")
+                finished_early = True
+                break
 
     text = "CONTINUE" if finished_early else vision._read_challenge_end_text()
     if not any(kw in text for kw in vision.CHALLENGE_END_KEYWORDS):
@@ -238,15 +140,16 @@ def run_challenge_iteration(final: bool = False, label: str = "", check_stuck_st
     timed_out = "QUIT" in text
     finished = "CONTINUE" in text
     if not timed_out and not finished:
-        # By this point CHALLENGE_HOLD_SECONDS + CHALLENGE_CHECK_DELAY (~39s)
-        # plus a 5s recheck have elapsed — the ~45s challenge timer has almost
+        # By this point CHALLENGE_HOLD_SECONDS + CHALLENGE_CHECK_DELAY (~40s)
+        # plus a 5s recheck have elapsed — the ~38s challenge timer has almost
         # certainly already ended, so this is some end screen OCR just failed
         # to read cleanly, not free-roam or a still-active race. Whether OCR
         # caught "RETRY" alone or nothing at all, assume the failed/timed-out
-        # Retry(enter)/Quit(escape) layout and press Enter — NOT
-        # _reset_challenge()'s pause-menu sequence, whose first press
-        # (escape) would hit Quit on this screen and exit the challenge
-        # entirely instead of retrying (confirmed happening in the field).
+        # Retry(enter)/Quit(escape) layout and press Enter — NOT a pause-menu
+        # escape-first recovery sequence, which would hit Quit on this screen
+        # and exit the challenge entirely instead of retrying (confirmed
+        # happening in the field, back when this used a stuck-start recovery
+        # path that opened with Escape).
         if "RETRY" in text:
             print(f"  [WARN] {tag} end screen ambiguous (RETRY only) — assuming failed run, retrying")
         else:

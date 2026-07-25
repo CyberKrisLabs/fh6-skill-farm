@@ -17,29 +17,25 @@ configured farm car — no manual repetition required.
 > matches specific English text (`CONTINUE`, `RETRY`, `SELECT`, etc.) — other
 > languages won't be recognized.
 
-> **HUD/speedometer must be visible during races.** The Challenge phase reads
-> the speedometer to detect a wrong-direction restart (stuck at the start line).
-> With the HUD hidden, nothing breaks — the check just always reads as "not
-> stuck," so a wrong-direction start won't be caught early and the farm waits
-> out the full challenge timer instead of restarting immediately.
-
-> **Transmission must be set to Automatic for the challenge.** The ease-in
-> throttle sequence and hold timings are tuned for automatic shifting — manual
-> transmission changes acceleration behavior enough to throw off the tuned
-> timings.
+> **Check Settings → Difficulty before the challenge.** Steering must NOT be
+> set to "Auto-Steering" — on this challenge's drag strip layout, auto-steering
+> turns the car into the wall, and the resulting wall friction slows it down
+> for the rest of the run. Shifting must be set to Automatic — the throttle
+> hold and timings are tuned for automatic shifting, and manual transmission
+> changes acceleration behavior enough to throw off the tuned timings. No
+> other difficulty/assist settings need to be touched.
 
 > **Auto Drive must be turned off.** It shows a prompt right at the start of
 > the challenge, and drives the car itself — both interfere with how the
-> Challenge phase is farmed (the ease-in throttle sequence expects to be the
-> one driving, and the extra prompt isn't a screen the farm knows how to
-> handle).
+> Challenge phase is farmed (the farm expects to be the one holding the
+> throttle, and the extra prompt isn't a screen it knows how to handle).
 
 > **Prefer fullscreen, or a large window — avoid 4:3/unusual aspect ratios.**
 > All screen detection is OCR-based, and how many real pixels actually reach
 > the OCR engine turns out to matter more than the game's resolution
 > *setting*: Windows stretches the game's internal render to whatever size
 > the window is drawn at, so a small windowed game gets fewer real captured
-> pixels for small HUD text (the speedometer, available skill points) than
+> pixels for small HUD text (available skill points) than
 > the same resolution setting run fullscreen — field-tested back-to-back at
 > the identical 1280x720 setting, a small window misread available skill
 > points (173 read as 10) while fullscreen read it correctly moments later,
@@ -79,16 +75,14 @@ a moving target.
 ## How It Works
 
 The tool detects screen state with Windows Runtime OCR (challenge end screens,
-speedometer, car showcase button bars, available skill points) and drives the
+car showcase button bars, available skill points) and drives the
 game with held keyboard presses — no memory reading, no network calls to the
 game.
 
-**Challenge phase** — Enters the configured challenge via its share
-code, holds the throttle through a tuned ease-in sequence to avoid overshooting
-the first jump, and detects the end screen (finished-on-time vs. timed-out, which
-have swapped Enter/Escape mappings) to retry or continue. If a restart spawns the
-car facing the wrong way, the tool detects a near-zero speedometer reading a few
-seconds in and restarts immediately instead of waiting out the full challenge timer.
+**Challenge phase** — Enters the configured challenge via its share code,
+holds the throttle solid from the start, and detects the end screen
+(finished-on-time vs. timed-out, which have swapped Enter/Escape mappings) to
+retry or continue.
 
 **Buy → Unlock → Remove cycle** — buys the configured farm car repeatedly from
 the Car Collection, opens each newly bought (non-preloaded) car to unlock its
@@ -107,7 +101,6 @@ samples input once per rendered frame and an instant press can be dropped entire
 | Challenge Only mode | Farm skill points via the challenge alone, bounded to ~999 SP — no car/garage setup required |
 | Full cycle mode | Challenge → Buy → Unlock → Remove, repeating for as many loops as your Credits allow |
 | Flexible starting point | Start from Main Menu, Challenge, Buy, Unlock, or Remove — useful for resuming a partial run |
-| Stuck-start detection | Detects and recovers from wrong-direction challenge restarts via speedometer OCR |
 | Time & cost estimate | Live summary of challenges/buys/unlocks, CR cost, and estimated wall-clock time before you start |
 | Editable timings | Tune wait constants per your PC/connection speed in the Timings tab |
 | Buffer challenges | Optional extra challenge runs to offset runs which did not yield the full 10 skill points |
@@ -202,7 +195,6 @@ a running game isn't unit-tested beyond checking sequence data shapes.
 | Problem | Fix |
 |---|---|
 | "Setup required" warning on Start | Fill in Car Collection Row/Column and the 9x multiplier car filter/position in Settings, or tick "Challenge Only" to skip car setup entirely |
-| Challenge restarts facing the wrong way | Expected occasionally — the tool detects this via speedometer OCR and restarts automatically; if it happens often, check that the challenge share code and grid position are correct |
 | Timings feel off for your PC | Adjust the wait constants in the Timings tab and re-run |
 | Farm doesn't find the right cars for Unlock/Remove | Make sure no other cars were acquired after the ones you're farming — Unlock/Remove sort by recently added |
 
