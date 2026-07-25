@@ -22,16 +22,10 @@ MENU_WAIT = 0.5  # Standard pause between menu navigation presses
 NAV_WAIT = 0.05  # Shorter pause for up/down navigation presses
 PAGE_WAIT = 2  # pageup/pagedown need more time for tab transitions to register
 TYPING_WAIT = 0.2  # Pause between key presses when typing (share codes etc.)
-LOADING_AFTER_CHALLENGE_EXIT_WAIT = 18  # Wait after exiting a finished challenge (Continue)
-# Wait for the fast-travel loading screen from Free Roam into the House or
-# Festival site (whichever is unlocked, both land on the same menus) — the
-# farm navigates on to the Car Collection afterward. During the challenge->buy
-# transition. Varies more by PC than most loading waits (seen needing longer
-# on a slower PC), hence the higher default with margin built in.
-LOADING_TRAVEL_WAIT = 10
-LOADING_CHALLENGE_WAIT = 25  # Wait for challenge to load from Main Menu (longer than normal loading)
-LOADING_RETRY_WAIT = 23.5  # Wait after escape (retry challenge) until the next run is drivable
-LOADING_EXIT_TO_GAME_WAIT = 9  # Wait after escaping the car menu back into Free Roam
+LOADING_AFTER_CHALLENGE_EXIT_WAIT = 20  # Wait after exiting a finished challenge (Continue)
+LOADING_CHALLENGE_WAIT = 30  # Wait for challenge to load from Main Menu (longer than normal loading)
+LOADING_RETRY_WAIT = 30  # Wait after escape (retry challenge) until the next run is drivable
+LOADING_EXIT_TO_GAME_WAIT = 15  # Wait after escaping the car menu back into Free Roam
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 # Fixed facts about the farming challenge itself — not user input (no Settings
@@ -78,7 +72,7 @@ refresh_config()
 def refresh_timings() -> None:
     """Apply CFG.timings overrides onto the wait constants. Call after changing/saving settings."""
     global MENU_WAIT, NAV_WAIT, PAGE_WAIT, TYPING_WAIT
-    global LOADING_AFTER_CHALLENGE_EXIT_WAIT, LOADING_TRAVEL_WAIT, LOADING_CHALLENGE_WAIT, LOADING_RETRY_WAIT
+    global LOADING_AFTER_CHALLENGE_EXIT_WAIT, LOADING_CHALLENGE_WAIT, LOADING_RETRY_WAIT
     global LOADING_EXIT_TO_GAME_WAIT
     t = CFG.timings
     MENU_WAIT = t.get("MENU_WAIT", MENU_WAIT)
@@ -86,7 +80,6 @@ def refresh_timings() -> None:
     PAGE_WAIT = t.get("PAGE_WAIT", PAGE_WAIT)
     TYPING_WAIT = t.get("TYPING_WAIT", TYPING_WAIT)
     LOADING_AFTER_CHALLENGE_EXIT_WAIT = t.get("LOADING_AFTER_CHALLENGE_EXIT_WAIT", LOADING_AFTER_CHALLENGE_EXIT_WAIT)
-    LOADING_TRAVEL_WAIT = t.get("LOADING_TRAVEL_WAIT", LOADING_TRAVEL_WAIT)
     LOADING_CHALLENGE_WAIT = t.get("LOADING_CHALLENGE_WAIT", LOADING_CHALLENGE_WAIT)
     LOADING_RETRY_WAIT = t.get("LOADING_RETRY_WAIT", LOADING_RETRY_WAIT)
     LOADING_EXIT_TO_GAME_WAIT = t.get("LOADING_EXIT_TO_GAME_WAIT", LOADING_EXIT_TO_GAME_WAIT)

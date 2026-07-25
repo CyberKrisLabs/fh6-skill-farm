@@ -30,6 +30,14 @@ configured farm car — no manual repetition required.
 > Challenge phase is farmed (the farm expects to be the one holding the
 > throttle, and the extra prompt isn't a screen it knows how to handle).
 
+> **Keep the co-driver name ("Anna") and "Link" prompt visible in HUD &
+> Gameplay settings.** The farm reads that corner of the screen (near the
+> minimap) to detect the moment the car is actually drivable — after a
+> challenge loads, after a retry, and after Remove exits back into Free
+> Roam — instead of just waiting a fixed number of seconds. If either is
+> hidden, the farm still works (it falls back to the full Timings-tab wait),
+> just without that extra responsiveness.
+
 > **Prefer fullscreen, or a large window — avoid 4:3/unusual aspect ratios.**
 > All screen detection is OCR-based, and how many real pixels actually reach
 > the OCR engine turns out to matter more than the game's resolution
@@ -53,7 +61,10 @@ python skill_farm_ui.py
 
 1. Launch FH6 and get to Free Roam (in-car, on the map)
 2. Open FH6 Skill Farm and fill in the Settings tab: farm car, Car Collection
-   Row/Column, share code, and the 9x multiplier car filter + position
+   Row/Column, share code, and the 9x multiplier car filter + position. Every
+   field there (and on the Timings tab) saves itself automatically as you
+   edit it — there's no Save button. "Skip Remove in Cycle" and the in-game
+   overlay are optional and off by default.
 3. Pick a "Start From" point on the Farm tab and enter your current Skill Points
 4. Hit **Start** — switch back to the game during the countdown and let it run
 
@@ -75,9 +86,9 @@ a moving target.
 ## How It Works
 
 The tool detects screen state with Windows Runtime OCR (challenge end screens,
-car showcase button bars, available skill points) and drives the
-game with held keyboard presses — no memory reading, no network calls to the
-game.
+car showcase button bars, available skill points, and the minimap HUD that
+confirms the car is actually drivable) and drives the game with held keyboard
+presses — no memory reading, no network calls to the game.
 
 **Challenge phase** — Enters the configured challenge via its share code,
 holds the throttle solid from the start, and detects the end screen
@@ -85,9 +96,12 @@ holds the throttle solid from the start, and detects the end screen
 retry or continue.
 
 **Buy → Unlock → Remove cycle** — buys the configured farm car repeatedly from
-the Car Collection, opens each newly bought (non-preloaded) car to unlock its
-wheelspin skill rewards, then removes them, freeing up garage space for the next
-cycle.
+the Car Collection, opens each newly bought car to unlock its reward (wheelspins,
+a straight CR payout, or both, depending on the car), switches to the 9x
+multiplier car (doubling as the safety step off the farm car), then removes
+the farm cars, freeing up garage space for the next cycle. Removing can be
+skipped entirely ("Skip Remove in Cycle" in Settings) for anyone who'd rather
+keep or gift the cars themselves instead.
 
 Every key press goes through a keyDown → hold → keyUp sequence, since the game
 samples input once per rendered frame and an instant press can be dropped entirely.
@@ -102,8 +116,11 @@ samples input once per rendered frame and an instant press can be dropped entire
 | Full cycle mode | Challenge → Buy → Unlock → Remove, repeating for as many loops as your Credits allow |
 | Flexible starting point | Start from Main Menu, Challenge, Buy, Unlock, or Remove — useful for resuming a partial run |
 | Time & cost estimate | Live summary of challenges/buys/unlocks, CR cost, and estimated wall-clock time before you start |
-| Editable timings | Tune wait constants per your PC/connection speed in the Timings tab |
+| Fallback timings | Most loading waits are now OCR-detected automatically; a handful of Timings-tab wait constants remain as fallback ceilings for whenever detection doesn't confirm loading in time |
+| Skip Remove in Cycle | Optionally leave farmed cars in the garage each cycle instead of auto-removing them, e.g. to gift them yourself |
+| Multi-reward car support | Farm cars can grant wheelspins, a straight CR payout, or both — the app ships with the Lamborghini Revuelto (wheelspins) and Dodge Viper GTS ACR (CR) |
 | Buffer challenges | Optional extra challenge runs to offset runs which did not yield the full 10 skill points |
+| In-game overlay | Optional always-on-top HUD over the FH6 window with Start/Stop and live phase/cycle progress |
 | GUI & CLI | PySide6 GUI, or `skill_farm.py` for scripted/headless runs |
 | Standalone EXE | Packages into a single executable with PyInstaller |
 
@@ -168,11 +185,17 @@ farm_core/               Core automation
   cli.py                    argparse entry point
 
 farm_ui/                 PySide6 GUI
-  farm_tab.py               Start From / Options / Summary / Start-Stop / Log
-  settings_tab.py            Farm car, Car Collection position, share code, multiplier car
-  timings_tab.py             User-editable wait constants
+  theme.py                 Stylesheet
+  widgets.py                Small reusable widgets, log bridge, generic builders
+  farm_tab.py                Start From / Options / Summary / Start-Stop / Log
+  settings_tab.py             Farm car, Car Collection position, share code, multiplier
+                              car, Skip Remove in Cycle, in-game overlay toggle — auto-saves
+  timings_tab.py              User-editable fallback wait constants — auto-saves
+  guide_tab.py                Guide tab — full read-through built from guide_content.py
+  guide_content.py             Shared explanatory text for the ⓘ info popups + Guide tab
   info_tab.py                 Version, GitHub/donate links, update check
-  app.py                     Main window
+  overlay.py                   In-game overlay (optional, off by default)
+  app.py                       Main window
 ```
 
 ---
@@ -195,8 +218,10 @@ a running game isn't unit-tested beyond checking sequence data shapes.
 | Problem | Fix |
 |---|---|
 | "Setup required" warning on Start | Fill in Car Collection Row/Column and the 9x multiplier car filter/position in Settings, or tick "Challenge Only" to skip car setup entirely |
-| Timings feel off for your PC | Adjust the wait constants in the Timings tab and re-run |
+| Timings feel off for your PC | Adjust the fallback wait constants in the Timings tab and re-run |
 | Farm doesn't find the right cars for Unlock/Remove | Make sure no other cars were acquired after the ones you're farming — Unlock/Remove sort by recently added |
+| Multiplier car ends up in the wrong position at runtime | Its Position (Settings tab) must be recorded on My Cars' *default* sort — not "Recently Added" |
+| Farm gets stuck starting from "Remove" | Don't be actively driving the 9x multiplier car when you start from there — switch to any other car first |
 
 **Config location** (useful for debugging):
 - Settings: `%APPDATA%\FH6SkillFarm\skill_farm_settings.json`

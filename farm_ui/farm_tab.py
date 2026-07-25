@@ -53,6 +53,12 @@ _SECS_PER_BUY = 2.5  # one car purchase
 _SECS_PER_UNLOCK = 39.0  # one car skill unlock — exact every steady-state iteration
 _SECS_PER_REMOVE = 3.0  # one car removal — exact every iteration
 _SECS_REMOVE_FIXED = 38  # safety switch + navigate back (not per-car)
+# Estimated cost of the Skip Remove in Cycle path: the same switch-to-
+# multiplier-car step as the full flow, then straight to the exit tail — no
+# sort-by-recently-added, no per-car removal loop at all. Derived from
+# _SECS_REMOVE_FIXED minus the omitted "back into the list + sort" steps
+# (~4s); not yet re-measured from a real skip-enabled run.
+_SECS_REMOVE_SKIP_FIXED = 34
 _SECS_TRANS_INIT = 46  # main menu → challenge (search + load) — not re-measured
 _SECS_TRANS_CHALLENGE = 40  # remove done → challenge start (cycle 2+) — varies with search poll luck
 _SECS_TRANS_BUY = 46  # challenge end → auto show
@@ -65,16 +71,22 @@ def _fmt_time(secs: float) -> str:
     return f"{h}h {m}m" if h else f"{m}m"
 
 
+def _remove_secs(n: int) -> int:
+    """Remove-phase time for n cars, honoring Skip Remove in Cycle.
+
+    Only valid for a remove that's reached as part of an automatic cycle
+    (not an explicit "Start From: Remove" action, which always actually
+    removes regardless of the setting — see
+    orchestrator._run_farm_inner's manual-start exception).
+    """
+    if config.CFG.skip_remove_in_cycle:
+        return _SECS_REMOVE_SKIP_FIXED
+    return int(_SECS_REMOVE_FIXED + n * _SECS_PER_REMOVE)
+
+
 def _noncycle_secs(n: int) -> int:
     """Buy+unlock+remove time for n cars including transitions."""
-    return int(
-        _SECS_TRANS_BUY
-        + n * _SECS_PER_BUY
-        + _SECS_TRANS_UNLOCK
-        + n * _SECS_PER_UNLOCK
-        + _SECS_REMOVE_FIXED
-        + n * _SECS_PER_REMOVE
-    )
+    return int(_SECS_TRANS_BUY + n * _SECS_PER_BUY + _SECS_TRANS_UNLOCK + n * _SECS_PER_UNLOCK) + _remove_secs(n)
 
 
 class FarmTabMixin:
@@ -456,12 +468,8 @@ class FarmTabMixin:
             return f"~{_fmt_time(t)} total"
 
         def _time_buy(to_buy: int, unlock_n: int, first_challenges: int) -> str:
-            t_partial = int(
-                to_buy * _SECS_PER_BUY
-                + _SECS_TRANS_UNLOCK
-                + unlock_n * _SECS_PER_UNLOCK
-                + _SECS_REMOVE_FIXED
-                + unlock_n * _SECS_PER_REMOVE
+            t_partial = int(to_buy * _SECS_PER_BUY + _SECS_TRANS_UNLOCK + unlock_n * _SECS_PER_UNLOCK) + _remove_secs(
+                unlock_n
             )
             if cr <= 0:
                 tn = (
@@ -481,8 +489,10 @@ class FarmTabMixin:
 
         def _time_unlock_remove(phase: str, n: int, first_challenges: int) -> str:
             if phase == "unlock":
-                t_partial = int(n * _SECS_PER_UNLOCK + _SECS_REMOVE_FIXED + n * _SECS_PER_REMOVE)
+                t_partial = int(n * _SECS_PER_UNLOCK) + _remove_secs(n)
             else:
+                # Explicit "Start From: Remove" — always the real removal,
+                # never skipped regardless of the setting (see _remove_secs).
                 t_partial = int(_SECS_REMOVE_FIXED + n * _SECS_PER_REMOVE)
             if cr <= 0:
                 tn = (
@@ -509,6 +519,13 @@ class FarmTabMixin:
                 return "Challenge 0×"
             return f"Challenge {base_c}{_buf_suffix(buf_c)} = {base_c + buf_c}×"
 
+        def _remove_lbl(n: int) -> str:
+            # Remove-count label for a remove reached via an automatic cycle
+            # (not an explicit "Start From: Remove" action) — see _remove_secs.
+            if config.CFG.skip_remove_in_cycle:
+                return "Remove 0  (skipped)"
+            return f"Remove {n}"
+
         if phase in ("main", "challenge"):
             if phase == "main":
                 parts.append("Navigate to challenge")
@@ -533,7 +550,7 @@ class FarmTabMixin:
                     _challenge_lbl(base, challenges - base),
                     f"Buy {buy_count} ({first_cost:,} CR)",
                     f"Unlock {buy_count}",
-                    f"Remove {buy_count}",
+                    _remove_lbl(buy_count),
                 ]
                 parts.append(_cycle_tag(buy_count, buy_count))
                 parts.append(_time_main_challenge(init_secs, challenges, buy_count))
@@ -549,7 +566,7 @@ class FarmTabMixin:
             else:
                 parts.append(f"Buy {to_buy}  ({to_buy * config.CAR_PRICE_CR:,} CR)")
             unlock_lbl = f"Unlock {unlock_count}" + (f"  ({have}+{to_buy})" if have > 0 and to_buy > 0 else "")
-            parts += [unlock_lbl, f"Remove {unlock_count}"]
+            parts += [unlock_lbl, _remove_lbl(unlock_count)]
             if sp_remaining > 0:
                 base_c = math.ceil((config.SKILL_POINTS_CAP - sp_remaining) / config.POINTS_PER_CHALLENGE)
             else:
@@ -567,8 +584,10 @@ class FarmTabMixin:
             n = self._cars_spin.value()
             if phase == "unlock":
                 sp_after_unlock = max(0, sp - n * config.SKILL_POINTS_PER_CAR)
-                parts += [f"Unlock {n}", f"Remove {n}"]
+                parts += [f"Unlock {n}", _remove_lbl(n)]
             else:
+                # Explicit "Start From: Remove" — always shown as a real
+                # removal, never "(skipped)" (see _remove_lbl).
                 sp_after_unlock = sp
                 parts.append(f"Remove {n}")
             if self._ocr_challenge_override is not None:
@@ -708,7 +727,8 @@ class FarmTabMixin:
 
     def overlay_hidden_by_user(self) -> None:
         """The overlay's own Hide button was clicked — persist the setting off
-        and untick the Settings tab checkbox, without requiring Save Settings."""
+        and untick the Settings tab checkbox directly, bypassing the debounced
+        autosave (see SettingsTabMixin._schedule_autosave)."""
         self._overlay_enabled = False
         config.CFG.show_ingame_overlay = False
         farm_settings.save(config.CFG)
@@ -747,8 +767,8 @@ class FarmTabMixin:
         self._settings_root.setEnabled(enabled)
         self._timings_root.setEnabled(enabled)
         if enabled:
-            self._settings_status.setText("")
-            self._timings_status.setText("")
+            self._settings_status.setText("Changes save automatically")
+            self._timings_status.setText("Changes save automatically")
 
     # ── Log ────────────────────────────────────────────────────────────────────
 

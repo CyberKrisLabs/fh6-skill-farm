@@ -101,7 +101,9 @@ class GuideTabMixin:
             root,
             "Pick the car this farm should buy, unlock, and remove each cycle "
             "from the dropdown. Its price, skill points to unlock, and "
-            "wheelspin yield are shown read-only underneath once selected — "
+            "reward (wheelspins, a straight CR payout, or both — not every "
+            "car grants the same thing) are shown read-only underneath once "
+            "selected, only showing the reward types that car actually has — "
             "these come from the app's built-in car data, not something you "
             "type in.",
         )
@@ -123,10 +125,6 @@ class GuideTabMixin:
             "setting up the Challenge starting point (see the Starting Points "
             "guide tab).",
         )
-
-        title, text = SETTINGS_INFO["whats_next"]
-        _add_section(root, title.upper())
-        _add_para(root, text)
 
         title, text = SETTINGS_INFO["multiplier_filter"]
         _add_section(root, title.upper())
@@ -179,19 +177,13 @@ class GuideTabMixin:
             _add_subhead(root, label)
             _add_para(root, text)
 
-        _add_section(root, "CHALLENGE  (main menu → challenge → back)")
+        _add_section(root, "FALLBACK TIMINGS  (used only if drivable-HUD detection doesn't confirm in time)")
         for key in (
             "LOADING_CHALLENGE_WAIT",
             "LOADING_AFTER_CHALLENGE_EXIT_WAIT",
-            "LOADING_TRAVEL_WAIT",
             "LOADING_RETRY_WAIT",
+            "LOADING_EXIT_TO_GAME_WAIT",
         ):
-            label, text = TIMING_INFO[key]
-            _add_subhead(root, label)
-            _add_para(root, text)
-
-        _add_section(root, "UNLOCK / REMOVE")
-        for key in ("LOADING_EXIT_TO_GAME_WAIT",):
             label, text = TIMING_INFO[key]
             _add_subhead(root, label)
             _add_para(root, text)

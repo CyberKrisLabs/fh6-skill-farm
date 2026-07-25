@@ -9,11 +9,11 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "Main Menu",
         "IMPORTANT: before pressing Start, manually switch your active car to "
         "the 9x multiplier car (configured in Settings). The tool only does "
-        "this itself at the end of a Remove phase, to set up the next cycle's "
-        "challenge — on this first race of a fresh session nothing has "
-        "switched it for you yet, so if you're not already driving it, this "
-        "run won't get the multiplier and your skill point math will be "
-        "off.\n\n"
+        "this itself at the start of a Remove phase, to set up the next "
+        "cycle's challenge — on this first race of a fresh session nothing "
+        "has switched it for you yet, so if you're not already driving it, "
+        "this run won't get the multiplier and your skill point math will "
+        "be off.\n\n"
         "Also check Settings → Difficulty: Steering must NOT be set to "
         '"Auto-Steering" — on this challenge\'s drag strip layout, '
         "auto-steering turns the car into the wall, and the resulting wall "
@@ -25,6 +25,14 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "the start of the challenge and drives the car itself, which "
         "interferes with the farm holding the throttle itself and isn't a "
         "screen the farm knows how to handle.\n\n"
+        'Also in Settings → HUD & Gameplay, keep the co-driver name ("Anna") '
+        'and the "Link" prompt visible near the minimap — don\'t hide them. '
+        "The farm reads that corner of the screen to detect the moment the "
+        "car is actually drivable (challenge loading, retrying, and exiting "
+        "Remove back into Free Roam) instead of just waiting a fixed number "
+        "of seconds. If they're hidden, the farm still works — it falls back "
+        "to waiting the full Timings-tab value — just without that extra "
+        "responsiveness.\n\n"
         "In the game, while in Free Roam, press Escape to open the Main "
         'Menu. The tab should be on the first tab, "Campaign".\n\n'
         "The tool will navigate from there to the challenge.",
@@ -33,11 +41,11 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "Challenge",
         "IMPORTANT: before pressing Start, manually switch your active car to "
         "the 9x multiplier car (configured in Settings). The tool only does "
-        "this itself at the end of a Remove phase, to set up the next cycle's "
-        "challenge — on this first race of a fresh session nothing has "
-        "switched it for you yet, so if you're not already driving it, this "
-        "run won't get the multiplier and your skill point math will be "
-        "off.\n\n"
+        "this itself at the start of a Remove phase, to set up the next "
+        "cycle's challenge — on this first race of a fresh session nothing "
+        "has switched it for you yet, so if you're not already driving it, "
+        "this run won't get the multiplier and your skill point math will "
+        "be off.\n\n"
         "Also check Settings → Difficulty: Steering must NOT be set to "
         '"Auto-Steering" — on this challenge\'s drag strip layout, '
         "auto-steering turns the car into the wall, and the resulting wall "
@@ -49,6 +57,14 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "the start of the challenge and drives the car itself, which "
         "interferes with the farm holding the throttle itself and isn't a "
         "screen the farm knows how to handle.\n\n"
+        'Also in Settings → HUD & Gameplay, keep the co-driver name ("Anna") '
+        'and the "Link" prompt visible near the minimap — don\'t hide them. '
+        "The farm reads that corner of the screen to detect the moment the "
+        "car is actually drivable (challenge loading, retrying, and exiting "
+        "Remove back into Free Roam) instead of just waiting a fixed number "
+        "of seconds. If they're hidden, the farm still works — it falls back "
+        "to waiting the full Timings-tab value — just without that extra "
+        "responsiveness.\n\n"
         "The challenge starts driving immediately — there's no Enter press to "
         "kick it off — so you need to already be inside the challenge yourself "
         "before starting here. Enter it manually using the share code from the "
@@ -88,6 +104,13 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
         "you've already unlocked). Same requirement as Unlock: they need to "
         "be the most recently added cars, or the farm will remove cars you "
         "didn't intend to remove.\n\n"
+        "IMPORTANT: don't be actively driving the 9x multiplier car when "
+        "you start from here. The Remove phase's first step switches into "
+        'the multiplier car, and selecting "Get in Car" on a car you\'re '
+        "already in doesn't work the same way — the farm will get stuck. "
+        "Switch to any other car first, ideally one that also isn't the "
+        "same Performance Class / Car Type as the multiplier car (see the "
+        "Position note in Settings for why that matters too).\n\n"
         "Run this directly after unlocking the cars you want removed.",
     ),
 }
@@ -117,20 +140,26 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "potentially causing the farm to attempt buying more cars than your "
         "CR can actually afford.",
     ),
-    "whats_next": (
-        '"What\'s Next" (HUD & Gameplay)',
-        "FH6's HUD & Gameplay settings has a \"What's Next\" option that, when "
-        "turned on, shows an extra screen after finishing an activity — a "
-        "Select (Enter, picks a proposed activity) / Back (Escape, exits to "
-        "Free Roam) choice — instead of dropping you straight into Free Roam "
-        "like normal.\n\n"
-        "Tick this box if you have that setting turned on in your own game. "
-        "The farm will send an extra Escape (Back) and wait a few seconds "
-        "after exiting the challenge to get past that screen before "
-        "continuing to Buy.\n\n"
-        "Leave it unticked if you don't have \"What's Next\" enabled — sending "
-        "that extra Escape when the screen never appears would misfire into "
-        "whatever's on screen next instead.",
+    "skip_remove_in_cycle": (
+        "Skip Remove in Cycle",
+        "Off by default: after Unlock, the farm removes the cars it just "
+        "bought (freeing up the wheelspins-only cars for a fresh cycle).\n\n"
+        "Tick this if you'd rather keep or gift those cars yourself instead "
+        "of having the farm remove them automatically — e.g. FH6's Gift "
+        "Drop, which sends a car to a random player as a nice gesture. "
+        "(Gift Drop itself can't be automated here: its car list has no "
+        '"Recently Added" sort or any way to filter down to just the farm '
+        "cars you want to gift, so there's no reliable way for the farm to "
+        "pick the right ones.\n\n"
+        "This only skips the AUTOMATIC cycle's Remove step. Manually "
+        'picking "Remove" as the Start From point on the Farm tab still '
+        "actually removes cars regardless of this setting — it's your "
+        "on-demand way to clear cars out whenever you decide to.\n\n"
+        "IMPORTANT: a Forza Horizon 6 garage caps out at 2000 cars total. "
+        "Leave this ticked across enough sessions without ever removing or "
+        "gifting anything yourself, and you can hit that cap — the game "
+        "will refuse to add more, and the farm's next Buy phase will fail. "
+        "Keep an eye on your garage total if you leave this on long-term.",
     ),
     "overlay": (
         "In-Game Overlay",
@@ -170,39 +199,42 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "have at least one matching car in it. Removing/selling matters "
         "just as much as acquiring: it can make a category disappear from "
         "the filter list entirely (shifting every row below it up), not "
-        "just add one. (The cars this farm buys don't cause this — they're "
-        "always removed again before it switches to the multiplier car, so "
-        "they never linger in My Cars.) Re-check both rows before starting "
-        "a new farm run if your garage has changed at all since you last "
-        "set this up, rather than assuming it's still accurate.",
+        "just add one. Note this now includes the farm's own bought cars, "
+        "too: the Remove phase switches to the multiplier car FIRST, before "
+        "removing this cycle's freshly-bought cars — so if your farm car "
+        "shares the same Performance Class and Car Type as the multiplier "
+        "car, those still-owned farm cars will appear in this same filtered "
+        "list and can shift the position below. (The farm car this tool "
+        "ships with, the Lamborghini Revuelto, is Performance Class S2 / "
+        "Hypercars — this only matters if your own multiplier car happens "
+        "to fall under that same class and type.) Re-check both rows before "
+        "starting a new farm run if your garage has changed at all since "
+        "you last set this up, rather than assuming it's still accurate.",
     ),
     "multiplier_position": (
         "9x Multiplier Car — Position",
         "After filtering My Cars to your configured Performance Class + Car "
         "Type, this is where the multiplier car sits in the filtered grid: "
         "Row 1–3 (3 rows per column), Column left to right.\n\n"
-        'IMPORTANT: sort My Cars by "Recently Added" before you work this '
-        "out — not whatever sort the list happens to already be on. During "
-        "the Remove phase, the farm opens My Cars sorted by Recently Added "
-        "(it needs that sort to find the cars it just bought) and never "
-        "changes the sort back before switching to the multiplier car "
-        "right after — so that's the sort order actually active in the "
-        "filtered grid when the position you set here gets used live. Set "
-        "this up on any other sort and the row/column you record won't "
-        "match where the farm actually finds it once running.\n\n"
-        "Important: when you work this out, make sure you're not currently "
-        "IN a car that matches that same Performance Class / Car Type — if "
-        "you are, the order shown won't match the order the farm will "
-        "actually see once it's running, and the position you record here "
-        "will be wrong.\n\n"
-        "IMPORTANT: re-check this position before starting a new farm run "
-        "too, for the same reason as the Filter rows above — any garage "
-        "change through normal play between farm sessions (getting, buying, "
+        "IMPORTANT:\n"
+        "• Work this out on My Cars' default sort. Set this up on a "
+        "different sort and the row/column you record won't match where "
+        "the farm actually finds it once running.\n"
+        "• Make sure you're not currently IN a car that matches that same "
+        "Performance Class / Car Type — if you are, the order shown won't "
+        "match the order the farm will actually see once it's running, and "
+        "the position you record here will be wrong.\n"
+        "• Re-check this position before starting a new farm run too, for "
+        "the same reason as the Filter rows above — any garage change "
+        "through normal play between farm sessions (getting, buying, "
         "removing, or selling a car) can shift where your multiplier car "
         "ends up sitting in the filtered grid. Removing/selling a car "
-        "shifts positions just as much as acquiring one does. (Cars the "
-        "farm buys itself don't cause this — they're removed again before "
-        "it switches to the multiplier car.)",
+        "shifts positions just as much as acquiring one does. This now "
+        "includes the farm's own bought cars too: the Remove phase "
+        "switches to the multiplier car FIRST, before removing that "
+        "cycle's freshly-bought cars, so they can still shift this "
+        "position if they share the multiplier car's Performance Class "
+        "and Car Type (see the Filter section above).",
     ),
 }
 
@@ -249,49 +281,64 @@ TIMING_INFO: dict[str, tuple[str, str]] = {
         "Loading Challenge Wait",
         "The wait (in seconds) after selecting the challenge from the search "
         "results, while it loads — the Main Menu → Challenge transition.\n\n"
-        "One of the longest waits in the farm, since it covers an actual level "
-        "load rather than a menu animation. Raise it if the challenge doesn't "
+        "This is a fallback, not the primary wait: the farm first polls for "
+        'the co-driver name ("Anna") and the "Link" prompt near the minimap '
+        "to detect the moment the challenge is actually drivable, checking "
+        'every second until it shows up (logged as "[WARN] Drivable HUD not '
+        "detected... — proceeding anyway\" if it never does). If you don't "
+        "have Anna/Link visible in your own HUD & Gameplay settings, or OCR "
+        "has trouble reading them on your PC, this fixed number is what "
+        "actually governs the wait — raise it if the challenge doesn't "
         "auto-start driving in time for the throttle hold.\n\n"
-        "Too high has a real cost, not just wasted time: this wait doesn't "
-        "pause the challenge's own countdown, so once the level has actually "
-        "finished loading, every extra second spent still waiting is a second "
-        "taken off the time you have to complete it — set much higher than "
-        "your PC needs, it can turn an otherwise-completable run into a wasted "
-        "one. Worth testing this one down to the lowest value that reliably "
-        "works on your PC, not just leaving it generous.",
+        "Too high still has a real cost when this fallback is what's "
+        "actually used: this wait doesn't pause the challenge's own "
+        "countdown, so once the level has actually finished loading, every "
+        "extra second spent still waiting is a second taken off the time "
+        "you have to complete it — set much higher than your PC needs, it "
+        "can turn an otherwise-completable run into a wasted one. Worth "
+        "testing this one down to the lowest value that reliably works on "
+        "your PC, not just leaving it generous.",
     ),
     "LOADING_AFTER_CHALLENGE_EXIT_WAIT": (
         "Loading After Challenge Exit Wait",
         "The wait (in seconds) after pressing Continue to exit a finished "
         "challenge, before the next phase's navigation begins.\n\n"
-        "Raise it if the farm starts pressing keys before you're actually back "
-        "at a menu after finishing the last challenge of a cycle.",
-    ),
-    "LOADING_TRAVEL_WAIT": (
-        "Loading Travel Wait",
-        "The wait (in seconds) for the fast-travel loading screen from Free "
-        "Roam into the House or the Festival site — whichever fast-travel "
-        "destination your account has unlocked (both land on the same menus "
-        "afterward, so it doesn't matter which) — during the challenge → buy "
-        "transition. The farm navigates on to the Car Collection afterward, "
-        "once this loading screen has finished.\n\n"
-        "This varies more by PC than most loading waits. Raise it if the farm "
-        "starts navigating menus before the destination has actually finished "
-        "loading.",
+        "This is a fallback, not the primary wait: the farm first polls for "
+        'the co-driver name ("Anna") and the "Link" prompt near the minimap '
+        "to detect the moment you're actually back in a drivable state, and "
+        "only falls back to this fixed number if that detection doesn't "
+        "confirm it in time. If you don't have Anna/Link visible in HUD & "
+        "Gameplay settings, or OCR has trouble reading them, this is the "
+        "value that actually governs the wait — raise it if the farm starts "
+        "pressing keys before you're actually back at a menu after finishing "
+        "the last challenge of a cycle.",
     ),
     "LOADING_RETRY_WAIT": (
         "Loading Retry Wait",
         "The wait (in seconds) after pressing Retry — whether the run finished "
         "on time (Retry via escape) or timed out (Retry via enter) — until the "
         "next challenge run is actually drivable.\n\n"
-        "Raise it if the farm starts holding W for the next run before the car "
-        "is actually loaded in and controllable.",
+        "This is a fallback, not the primary wait: the farm first polls for "
+        'the co-driver name ("Anna") and the "Link" prompt near the minimap '
+        "to detect the moment the next run is actually drivable, and only "
+        "falls back to this fixed number if that detection doesn't confirm "
+        "it in time. If you don't have Anna/Link visible in HUD & Gameplay "
+        "settings, or OCR has trouble reading them, this is the value that "
+        "actually governs the wait — raise it if the farm starts holding W "
+        "for the next run before the car is actually loaded in and "
+        "controllable.",
     ),
     "LOADING_EXIT_TO_GAME_WAIT": (
         "Loading Exit To Game Wait",
         "The wait (in seconds), during the Remove phase, after escaping the car "
         "menu back into Free Roam, before navigating to the main menu.\n\n"
-        "How long this takes can vary by PC. Raise it if the farm tries to open "
-        "the main menu before you're actually back in Free Roam.",
+        "This is a fallback, not the primary wait: the farm first polls for "
+        'the co-driver name ("Anna") and the "Link" prompt near the minimap '
+        "to detect the moment you're actually back in Free Roam, and only "
+        "falls back to this fixed number if that detection doesn't confirm "
+        "it in time. If you don't have Anna/Link visible in HUD & Gameplay "
+        "settings, or OCR has trouble reading them, this is the value that "
+        "actually governs the wait — raise it if the farm tries to open the "
+        "main menu before you're actually back in Free Roam.",
     ),
 }

@@ -43,13 +43,19 @@ CHALLENGE_POLL_INTERVAL = 1  # poll cadence, both during the hold (after CHALLEN
 # where input is a no-op.
 RATE_CHALLENGE_PROMPT_WAIT = 1  # settle time before checking for the prompt
 
-# FH6's HUD & Gameplay "What's Next" setting (off by default, per-user —
-# see farm_settings.Settings.whats_next_enabled) shows an extra Select/Back
-# screen after the post-challenge loading finishes. Escape (Back) exits it to
-# Free Roam same as normal. Only sent if the user has flagged this on in
-# Settings — sending it when the screen never appears would misfire into
-# whatever's on screen next.
-WHATS_NEXT_EXIT_WAIT = 5  # settle time after backing out of the "What's Next" screen
+# FH6's HUD & Gameplay "What's Next" setting shows an extra Select/Back
+# screen after the post-challenge loading finishes, instead of dropping
+# straight into Free Roam. Used to be gated behind a user-configured
+# Settings checkbox (Settings.whats_next_enabled, since removed) since the
+# farm couldn't tell whether it was actually showing — replaced with direct
+# detection (vision.WHATS_NEXT_KEYWORDS via _wait_for_drivable_or_whats_next
+# below), so it no longer matters whether the user remembers to flag this,
+# or toggles the game setting mid-session. Escape (Back) exits it to Free
+# Roam same as normal.
+# Poll ceiling for the drivable-HUD check after backing out of "What's Next"
+# (was a flat 5s wait) — settles DRIVABLE_POLL_START_DELAY_SHORT (5s) first,
+# then polls up to this before giving up and proceeding anyway.
+WHATS_NEXT_EXIT_WAIT = 20
 
 # Backing out of "What's Next" repeatedly without picking a suggested event
 # sometimes triggers a follow-up nag: "Change What's Next? You're often
@@ -63,6 +69,82 @@ WHATS_NEXT_EXIT_WAIT = 5  # settle time after backing out of the "What's Next" s
 # nag never appears, since the game's already past this into a loading screen.
 CHANGE_WHATS_NEXT_PROMPT_WAIT = 1  # settle time before checking for the nag prompt
 
+# Shared anchor for every "wait until the car is actually drivable" spot in
+# this app (main menu -> challenge load, challenge retry and final-exit here,
+# and orchestrator._exit_remove_phase_to_game's remove -> Free Roam wait) —
+# see vision.DRIVABLE_HUD_KEYWORDS / docs/state-detection-plan.md #2/#3/#4/#5.
+# This lives here (not vision.py) since it needs keys._sleep/_stop_event, and here
+# rather than duplicated per call site since orchestrator.py already imports
+# this module. Each call site keeps its own existing Timings-tab wait
+# constant as the poll ceiling/fallback (unlike buy._wait_for_travel_loaded's
+# LOADING_TRAVEL_WAIT, this anchor hasn't been field-verified across
+# multiple loading scenarios yet, so — per this doc's general guidance —
+# nothing gets deleted here).
+# Settle time before the first check, scaled to how long each transition
+# typically takes before the HUD could plausibly appear at all — checking
+# earlier than that just spends OCR calls on a screen that's still
+# definitely loading.
+# Short: orchestrator._exit_remove_phase_to_game's remove -> Free Roam wait
+#   (LOADING_EXIT_TO_GAME_WAIT ceiling).
+# Medium: the challenge-exit wait below (LOADING_AFTER_CHALLENGE_EXIT_WAIT
+#   ceiling).
+# Long: challenge load and retry below (LOADING_CHALLENGE_WAIT /
+#   LOADING_RETRY_WAIT ceilings) — these never finish faster than 20s.
+# See farm_settings.TIMING_DEFAULTS for the current ceiling values.
+DRIVABLE_POLL_START_DELAY_SHORT = 5
+DRIVABLE_POLL_START_DELAY_MEDIUM = 15
+DRIVABLE_POLL_START_DELAY_LONG = 20
+DRIVABLE_POLL_INTERVAL = 1  # poll cadence once polling starts
+
+
+def _wait_for_drivable(settle: float, max_seconds: float, warn_label: str) -> None:
+    """Poll for the minimap HUD (vision.DRIVABLE_HUD_KEYWORDS) confirming the
+    car is drivable, instead of a blind fixed wait. Settles `settle` seconds
+    first (loading can't plausibly finish before then; clamped to
+    `max_seconds` in case a user has tuned that call site's Timings-tab
+    value below the settle), then polls every DRIVABLE_POLL_INTERVAL up to
+    `max_seconds` before giving up and proceeding anyway.
+    """
+    settle = min(settle, max_seconds)
+    keys._sleep(settle)
+    if keys._stop_event.is_set():
+        return
+    elapsed = settle
+    while elapsed < max_seconds:
+        if any(kw in vision._read_minimap_hud_text() for kw in vision.DRIVABLE_HUD_KEYWORDS):
+            return
+        keys._sleep(DRIVABLE_POLL_INTERVAL)
+        elapsed += DRIVABLE_POLL_INTERVAL
+        if keys._stop_event.is_set():
+            return
+    print(f"  [WARN] Drivable HUD not detected after {max_seconds}s ({warn_label}) — proceeding anyway")
+
+
+def _wait_for_drivable_or_whats_next(settle: float, max_seconds: float) -> bool:
+    """Poll after exiting a challenge for either the drivable HUD (already
+    in Free Roam, nothing further to do) or FH6's "What's Next" screen (see
+    vision.WHATS_NEXT_KEYWORDS). Returns True if "What's Next" was detected
+    (caller should back out of it), False otherwise — including the give-up
+    case, since landing directly in Free Roam is the far more common outcome
+    ("What's Next" is an opt-in game setting).
+    """
+    settle = min(settle, max_seconds)
+    keys._sleep(settle)
+    if keys._stop_event.is_set():
+        return False
+    elapsed = settle
+    while elapsed < max_seconds:
+        if any(kw in vision._read_minimap_hud_text() for kw in vision.DRIVABLE_HUD_KEYWORDS):
+            return False
+        if all(kw in vision._read_car_screen_buttons() for kw in vision.WHATS_NEXT_KEYWORDS):
+            return True
+        keys._sleep(DRIVABLE_POLL_INTERVAL)
+        elapsed += DRIVABLE_POLL_INTERVAL
+        if keys._stop_event.is_set():
+            return False
+    print(f"  [WARN] Neither drivable HUD nor What's Next screen detected after {max_seconds}s — assuming Free Roam")
+    return False
+
 
 def run_challenge_iteration(final: bool = False, label: str = "") -> bool:
     """Run one challenge. Returns True on success, False if it needs to be retried (no SP earned).
@@ -72,10 +154,10 @@ def run_challenge_iteration(final: bool = False, label: str = "") -> bool:
     run is always retried regardless of `final`, so exit only ever happens via
     Continue — never Quit (its post-exit screen isn't confirmed). Also
     dismisses the "Rate Challenge?" prompt (Like/Dislike/Cancel) that appears
-    for anyone other than the challenge's own creator, and — if
-    farm_settings.Settings.whats_next_enabled is set — backs out of FH6's
-    "What's Next" HUD & Gameplay screen too — and dismisses its own possible
-    follow-up "Change What's Next?" nag via No. See RATE_CHALLENGE_PROMPT_WAIT /
+    for anyone other than the challenge's own creator, and — if FH6's
+    "What's Next" HUD & Gameplay screen is detected (vision.WHATS_NEXT_KEYWORDS)
+    — backs out of it too, and dismisses its own possible follow-up "Change
+    What's Next?" nag via No. See RATE_CHALLENGE_PROMPT_WAIT /
     WHATS_NEXT_EXIT_WAIT / CHANGE_WHATS_NEXT_PROMPT_WAIT above.
     label: the "N/total" (or "N") text already printed for this run, echoed
     back in the finish/timeout log lines so they're identifiable.
@@ -155,13 +237,13 @@ def run_challenge_iteration(final: bool = False, label: str = "") -> bool:
         else:
             print(f"  [WARN] {tag} end screen not detected at all — assuming failed run, retrying")
         keys._press_key("enter")  # Retry
-        keys._sleep(config.LOADING_RETRY_WAIT)
+        _wait_for_drivable(DRIVABLE_POLL_START_DELAY_LONG, config.LOADING_RETRY_WAIT, "retry")
         return False
 
     if timed_out:
         print(f"  [WARN] {tag} did not finish in time - not counted")
         keys._press_key("enter")  # Retry (timeout screen)
-        keys._sleep(config.LOADING_RETRY_WAIT)
+        _wait_for_drivable(DRIVABLE_POLL_START_DELAY_LONG, config.LOADING_RETRY_WAIT, "retry")
         return False
 
     if not finished_early:
@@ -174,8 +256,8 @@ def run_challenge_iteration(final: bool = False, label: str = "") -> bool:
             return False
         keys.mp("down", 2, config.NAV_WAIT)  # navigate to Cancel (Like / Dislike / Cancel)
         keys._press_key("enter")  # dismiss the "Rate Challenge?" prompt via Cancel
-        keys._sleep(config.LOADING_AFTER_CHALLENGE_EXIT_WAIT)
-        if config.CFG.whats_next_enabled:
+        if _wait_for_drivable_or_whats_next(DRIVABLE_POLL_START_DELAY_MEDIUM, config.LOADING_AFTER_CHALLENGE_EXIT_WAIT):
+            print("  [INFO] What's Next screen detected — exiting out of it")
             if keys._stop_event.is_set():
                 return False
             keys._press_key("escape")  # Back — exit the "What's Next" HUD & Gameplay screen
@@ -184,10 +266,10 @@ def run_challenge_iteration(final: bool = False, label: str = "") -> bool:
                 return False
             keys.mp("down", wait=config.NAV_WAIT)  # navigate to "No" (only matters if the nag prompt appeared)
             keys._press_key("enter")  # dismiss "Change What's Next?" via No
-            keys._sleep(WHATS_NEXT_EXIT_WAIT)
+            _wait_for_drivable(DRIVABLE_POLL_START_DELAY_SHORT, WHATS_NEXT_EXIT_WAIT, "what's next exit")
     else:
         keys._press_key("escape")  # Retry (on-time screen) — SP granted, reloads into the next run
-        keys._sleep(config.LOADING_RETRY_WAIT)
+        _wait_for_drivable(DRIVABLE_POLL_START_DELAY_LONG, config.LOADING_RETRY_WAIT, "retry")
     return True
 
 
@@ -202,7 +284,6 @@ def _search_challenge() -> bool:
     keys.mp("enter")
     keys.mp("down", wait=config.NAV_WAIT)
     keys.mp("enter")
-    print("  Early poll: checking every 1s for up to 5s while the track loads...")
     for _ in range(5):
         keys._sleep(1)
         if keys._stop_event.is_set():
@@ -222,7 +303,7 @@ def transition_to_challenge():
     if keys._stop_event.is_set():
         return
     keys.mp("pageup", 2, config.PAGE_WAIT)  # navigate right to Creative Hub tab
-    keys.mp("enter")  # open Creative Hub
+    keys.mp("enter", wait=1)  # open Creative Hub
     keys.mp("down", wait=config.NAV_WAIT)  # move to challenges entry
     keys.mp("enter", wait=2)  # menu settle
 
@@ -234,7 +315,7 @@ def transition_to_challenge():
         if keys._stop_event.is_set():
             return
         if _detected:
-            print("  [INFO] Challenge found via early poll")
+            print("  [INFO] Found challenge")
 
         if not _detected and not keys._stop_event.is_set():
             # Not visible yet — wait 10s more (15s total since search)
@@ -261,5 +342,6 @@ def transition_to_challenge():
             keys._stop_event.set()
             return
 
-    keys.mp("enter", wait=config.LOADING_CHALLENGE_WAIT)  # select challenge → loading screen
+    keys.mp("enter")  # select challenge → loading screen
+    _wait_for_drivable(DRIVABLE_POLL_START_DELAY_LONG, config.LOADING_CHALLENGE_WAIT, "challenge load")
     keys._sleep(1)

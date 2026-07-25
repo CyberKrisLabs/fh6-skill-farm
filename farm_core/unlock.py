@@ -59,6 +59,25 @@ UNLOCK_SEQUENCES = {
         ("enter", 1),
         ("wait", 1),
     ],
+    "dodge_viper_gts_acr": [
+        ("enter", 1),
+        ("wait", 1),
+        ("right", 1),
+        ("enter", 1),
+        ("wait", 1),
+        ("up", 1),
+        ("enter", 1),
+        ("wait", 1),
+        ("up", 1),
+        ("enter", 1),
+        ("wait", 1),
+        ("up", 1),
+        ("enter", 1),
+        ("wait", 1),
+        ("right", 1),
+        ("enter", 1),
+        ("wait", 1),
+    ],
 }
 
 if config.CFG.selected_car not in UNLOCK_SEQUENCES:
@@ -112,8 +131,7 @@ def _open_cars_for_unlock_resume():
 # run_unlock_iteration can't know in advance whether a car it opens is
 # already loaded from earlier this session (lands directly on its own menu)
 # or not (lands on the showcase view first) — polls for whichever screen
-# shows up instead of guessing a fixed wait, same approach as
-# remove._select_non_farm_car_as_active. This also means Unlock no longer
+# shows up instead of guessing a fixed wait. This also means Unlock no longer
 # requires every car to be strictly non-preloaded — either state is now
 # detected and handled, not just assumed.
 CAR_LOAD_POLL_START_DELAY = 5  # settle time before the first check
@@ -128,12 +146,10 @@ def _wait_for_car_loaded() -> bool:
     Returns True if the showcase view was detected (not loaded this session
     — caller needs an extra escape before the skill-tree walk), False if the
     already-loaded menu was detected. The give-up case (neither ever
-    detected) also returns True: unlike remove._select_non_farm_car_as_active
-    (which switches to some *other*, likely-already-driven car and
-    reasonably assumes already-loaded on a give-up), Unlock almost always
-    processes the farm's own freshly-bought cars, so the showcase view is
-    the far more common true state — defaulting to "already loaded" here
-    would guess wrong most of the time.
+    detected) also returns True: Unlock almost always processes the farm's
+    own freshly-bought cars, so the showcase view is the far more common true
+    state — defaulting to "already loaded" here would guess wrong most of
+    the time.
     """
     keys._sleep(CAR_LOAD_POLL_START_DELAY)
     if keys._stop_event.is_set():

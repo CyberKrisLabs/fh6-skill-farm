@@ -30,8 +30,8 @@ CHALLENGE_FOUND_KEYWORDS = {"SELECT"}
 # Explode | Photo Mode | Hide UI | Drive | Toggle Camera Height, vs.
 # Select | Back | Forzavista | Set as Home | Series Update | Drive on the
 # target menu for an already-loaded car. How long loading takes isn't known
-# up front, so farm_core.remove._select_non_farm_car_as_active polls both
-# keyword sets instead of guessing a fixed wait.
+# up front, so farm_core.unlock._wait_for_car_loaded polls both keyword sets
+# instead of guessing a fixed wait.
 CAR_SHOWCASE_KEYWORDS = {"EXPLODE", "PHOTO", "TOGGLE"}
 CAR_LOADED_MENU_KEYWORDS = {"FORZAVISTA", "HOME", "UPDATE"}
 
@@ -311,6 +311,49 @@ def _read_car_screen_buttons() -> str:
         return asyncio.run(_winrt_ocr_async(img)).upper()
     except Exception as exc:
         print(f"[WARN] OCR error (car screen check): {exc}")
+        return ""
+
+
+# The minimap HUD (bottom-left corner) shows the co-driver's name and a
+# "Link" prompt whenever the car is in a drivable state (Free Roam, or an
+# active challenge run) — but not during a loading screen. Field-confirmed
+# anchor for "is the car actually drivable yet", reusable everywhere a wait
+# is really "wait until Free Roam/the challenge is drivable" — main menu ->
+# challenge, challenge retry, remove -> Free Roam (see
+# farm_core.challenge._wait_for_drivable). "Link" can appear grayed out, but
+# it's still real text WinRT OCR should be able to pick up.
+DRIVABLE_HUD_KEYWORDS = {"ANNA", "LINK"}
+
+# FH6's "What's Next" (HUD & Gameplay setting) shows a Select/Back button bar
+# after exiting a challenge, instead of dropping straight into Free Roam —
+# read from the same crop as _read_car_screen_buttons(). "SELECT" alone is
+# also used elsewhere (CHALLENGE_FOUND_KEYWORDS, a completely different
+# screen/code path) and "BACK" appears on plenty of menus in general, so
+# neither is unique on its own — but requiring both together is safe here
+# specifically because farm_core.challenge._wait_for_drivable_or_whats_next
+# only ever polls this in the narrow post-challenge-exit window, where the
+# only two possible outcomes are Free Roam (DRIVABLE_HUD_KEYWORDS) or this
+# screen, not an unconstrained global check.
+WHATS_NEXT_KEYWORDS = {"SELECT", "BACK"}
+
+
+def _read_minimap_hud_text() -> str:
+    """OCR the bottom-left 20%x20% corner of the window (minimap HUD labels).
+    Returns uppercase text ("" on error/no window)."""
+    if not _winrt_available():
+        return ""
+    win = _get_fh6_window_region()
+    if win is None:
+        pw, ph = pyautogui.size()
+        win = (0, 0, pw, ph)
+    wx, wy, ww, wh = win
+    top = int(wh * 0.80)  # bottom 20%
+    width = int(ww * 0.20)  # left 20%
+    img = pyautogui.screenshot(region=(wx, wy + top, width, wh - top))
+    try:
+        return asyncio.run(_winrt_ocr_async(img)).upper()
+    except Exception as exc:
+        print(f"[WARN] OCR error (drivable HUD check): {exc}")
         return ""
 
 

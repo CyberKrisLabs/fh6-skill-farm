@@ -68,8 +68,27 @@ farm_ui/                PySide6 GUI
   widgets.py                Small reusable widgets, log bridge, generic builders
   farm_tab.py               Farm tab mixin — Start From / Options / Summary / Start-Stop / Log
   settings_tab.py            Settings tab mixin — farm car, Car Collection position,
-                             share code, 9x multiplier car filter + position
-  timings_tab.py             Timings tab mixin — user-editable wait constants
+                             share code, 9x multiplier car filter + position, Skip
+                             Remove in Cycle, in-game overlay toggle. Every field
+                             auto-saves (debounced 400ms) — no Save button. A
+                             `_loading_settings` guard flag stops the initial
+                             programmatic field-load (on tab build) from being
+                             mistaken for a user edit and auto-saving bogus
+                             `*_configured` flags — see farm_tab.py's identical
+                             `_loading_timings` pattern below.
+  timings_tab.py             Timings tab mixin — user-editable wait constants, split
+                             into "Menu Navigation" and "Fallback Timings" (the
+                             latter only used when drivable-HUD OCR detection
+                             doesn't confirm loading in time — see vision.py below).
+                             Same auto-save + `_loading_timings` guard pattern as
+                             settings_tab.py; no preset combo (removed — see
+                             docs/state-detection-plan.md #1).
+  guide_tab.py               Guide tab — a full read-through built from the same
+                             (title, text) content guide_content.py supplies to
+                             every ⓘ info popup elsewhere, so the two can't drift.
+  guide_content.py           Shared explanatory text: START_FROM_INFO / SETTINGS_INFO
+                             / TIMING_INFO dicts, keyed by the same strings
+                             settings_tab.py/timings_tab.py/farm_tab.py look up.
   info_tab.py                 Info tab mixin — version, GitHub/donate links, update check
                              (GitHub Releases API call — the only network call in the app;
                              the "no network calls" rule above is about the game itself)
@@ -79,9 +98,13 @@ farm_ui/                PySide6 GUI
   app.py                     SkillFarmWindow (combines the tab mixins)
 ```
 
+See also `docs/state-detection-plan.md` — the active tracking doc for converting fixed
+waits into OCR-based detection polling; referenced by name in several code comments
+below (`buy.py`, `challenge.py`, `remove.py`).
+
 **Cross-module rule:** wait constants and `BUFFER_ENABLED`/`CFG` live in `farm_core.config`
-and get rebound at runtime by `refresh_config()`/`refresh_timings()` (called when the
-user saves Settings/Timings while the GUI is already running). Every other module must
+and get rebound at runtime by `refresh_config()`/`refresh_timings()` (called after every
+Settings/Timings autosave — or Reset — while the GUI is already running). Every other module must
 access them via `config.NAME` (`from farm_core import config`, then `config.MENU_WAIT`)
 — never `from farm_core.config import NAME`, which would freeze at the value seen at
 import time and silently stop picking up later changes. `mp()` in `keys.py` follows the
@@ -94,7 +117,8 @@ inside the function body, not baked into the signature).
 
 Runtime settings and session logs live at `%APPDATA%\FH6SkillFarm\`:
 - `skill_farm_settings.json` — car config, Car Collection/multiplier-car positions,
-  share code, Timings tab values (see `farm_settings.Settings`)
+  share code, Timings tab values, Soko 78 house, Skip Remove in Cycle, in-game
+  overlay toggle (see `farm_settings.Settings` for the full field list)
 - `logs\*.txt` — one timestamped log per farm run
 
 This is deliberate, not incidental — under a PyInstaller exe, `__file__` resolves
@@ -169,16 +193,73 @@ pytest --cov --cov-report=term-missing
   these presses are a harmless no-op. Don't gate this behind a setting.
 - **"What's Next" (HUD & Gameplay) extra screen:** if the user has that game
   setting on, an extra Select/Back screen appears after the post-challenge
-  loading finishes, before Free Roam. This *is* gated — behind
-  `Settings.whats_next_enabled` (Settings tab checkbox, default off) — since
-  it's a per-user game setting the tool can't detect, and sending the extra
-  Escape when the screen never appears would misfire into whatever's next.
+  loading finishes, before Free Roam. **Removed (2026-07-25): the
+  `Settings.whats_next_enabled` Settings-tab checkbox** that used to gate
+  this, since the tool couldn't detect the screen and had to be told about
+  the user's own game setting. Replaced with direct detection
+  (`vision.WHATS_NEXT_KEYWORDS = {"SELECT", "BACK"}`,
+  `farm_core.challenge._wait_for_drivable_or_whats_next`) — field-tested to
+  show no meaningful timing difference between exiting a challenge with vs.
+  without "What's Next" on (~14-15s either way), so there was no reliable
+  way to infer it from timing alone; OCR content is what actually
+  distinguishes the two outcomes. "SELECT"/"BACK" are each common on other
+  screens on their own (e.g. `CHALLENGE_FOUND_KEYWORDS`'s own use of
+  "SELECT", in an unrelated code path) — requiring both together is only
+  safe because this poll runs in the narrow post-challenge-exit window where
+  Free Roam (`DRIVABLE_HUD_KEYWORDS`) or this screen are the only two
+  possible outcomes, not a blind global check. It no longer matters whether
+  the user remembers to flag this, or toggles the game setting mid-session.
   Backing out of it repeatedly can also trigger FH6's own "Change What's
   Next?" nag (Yes / No / No, and don't ask me again) — handled the same way
   as the Rate Challenge prompt (unconditional Down, Enter → "No", harmless
   no-op if it never appears). Deliberately picks plain "No", not "don't ask
   again" — the user has What's Next on *by choice*, so the nag should keep
   coming back rather than the tool silently changing that game setting for them.
+- **Remove phase switches to the 9x multiplier car FIRST, not last
+  (2026-07-25).** `remove._switch_to_multiplier_car()` now runs *before* the
+  remove loop instead of after — it does double duty as both the safety
+  switch away from a farm car (so the loop never tries to remove the active
+  car) and prep for the next cycle's challenge, so there's no second switch
+  needed at the end. `remove._select_non_farm_car_as_active()` (the old,
+  separate safety-switch step) was deleted entirely. Real consequence: the
+  9x Multiplier Car Position (Settings tab) must now be recorded on My Cars'
+  *default* sort, not "Recently Added" like before the reorder — see the
+  Settings ⓘ info. Also means starting manually from the "Remove" point
+  requires NOT currently driving the multiplier car (the switch-in doesn't
+  work the same way on a car you're already in, and gets stuck).
+- **`Settings.skip_remove_in_cycle`** (Settings tab checkbox, off by
+  default) lets the automatic buy/unlock/remove cycle skip the Remove step
+  entirely, for users who'd rather keep or gift the cars themselves (e.g.
+  FH6's Gift Drop — not automatable here, since its car list has no
+  "Recently Added" sort or filter to isolate just the farm's own cars).
+  Only gates the *automatic* cycle: explicitly picking "Remove" as the Start
+  From point on the Farm tab always actually removes, regardless of this
+  setting — see `orchestrator._run_farm_inner`'s manual-start exception.
+  Leaving it on indefinitely without ever removing/gifting risks hitting
+  FH6's 2000-car garage cap; the farm doesn't track or warn about this
+  itself, it's the user's own responsibility (see the Settings ⓘ info).
+- **`farm_settings.CarInfo.cr_reward`** — some farm cars (e.g. the Dodge
+  Viper GTS ACR, added alongside the original Lamborghini Revuelto) grant a
+  straight CR payout instead of/alongside wheelspins. The Settings tab's
+  Super Wheelspins / Wheelspins / CR Reward readouts each hide themselves
+  when that selected car's value is 0, rather than showing a permanent "0"
+  for a reward type it doesn't have — see `settings_tab.py`'s
+  `_load_car_fields()`.
+- **OCR-based detection has replaced most fixed loading waits (2026-07-25).**
+  See `docs/state-detection-plan.md` for the full write-up of each
+  conversion (#1-7, all done) — `vision.DRIVABLE_HUD_KEYWORDS = {"ANNA",
+  "LINK"}` (the co-driver name + "Link" prompt near the minimap) is the big
+  one, reused via `farm_core.challenge._wait_for_drivable()` at four
+  different call sites (challenge load, every retry path, the final-run
+  challenge-exit, and Remove's exit-to-game wait) instead of four separate
+  blind `sleep()`s. Those four `LOADING_*` Timings-tab constants are kept as
+  poll *ceilings*/fallbacks, not deleted — they're what the farm falls back
+  to if the HUD is never detected (e.g. the user has Anna/Link hidden in
+  their own HUD & Gameplay settings, or OCR just has trouble reading them).
+  `buy._wait_for_travel_loaded()` is the one exception where the old
+  constant (`LOADING_TRAVEL_WAIT`) was deleted outright instead of kept as a
+  fallback — its anchor is a straight reuse of an already-proven keyword set
+  (`CAR_LOADED_MENU_KEYWORDS`), not a new/unverified one.
 
 ---
 
@@ -202,13 +283,17 @@ pytest --cov --cov-report=term-missing
 - Timing defaults live ONLY in `farm_settings.TIMING_DEFAULTS` (source of truth for
   the Timings tab's reset-to-default and validation floors) and the matching
   constants in `farm_core/config.py`. Never introduce a second copy.
-- `farm_settings.TIMING_PRESETS` (Fast/Mid/Slow, Timings tab preset combo, same
-  apply-and-save-immediately UX as FH6-Sniper's preset combo) only varies
-  `LOADING_TRAVEL_WAIT`/`LOADING_CHALLENGE_WAIT` between tiers — the two waits
-  actually measured to differ between a tested desktop and a tested laptop
-  running FH6 at 1024x768. Every other timing is left at `TIMING_DEFAULTS`
-  across all three tiers deliberately; don't invent variance for the rest
-  without a real measured data point to back it.
+- **Removed: `farm_settings.TIMING_PRESETS`** (Fast/Mid/Slow, Timings tab
+  preset combo). It only ever varied `LOADING_CHALLENGE_WAIT` between tiers
+  (`LOADING_TRAVEL_WAIT` was the other one, until `buy._wait_for_travel_loaded()`
+  replaced it with polling and removed the setting entirely — see
+  `docs/state-detection-plan.md` #1) — and once all four remaining `LOADING_*`
+  waits became fallback-only ceilings behind drivable-HUD detection
+  (`docs/state-detection-plan.md` #2/#3/#4/#5), a hardware-tier preset for a
+  value most users now rarely even hit stopped pulling its weight. The
+  Timings tab's four loading waits now live in one "FALLBACK TIMINGS" group
+  (`farm_ui/timings_tab.py`), each tuned individually if the fallback ever
+  actually fires for that user — no combo box, no per-tier numbers.
 - Small-HUD OCR reads (available-SP check during Unlock) are inherently less
   reliable at low game resolutions than large end-screen text — there are
   fewer real source pixels to work with, and the 2x cubic upscale in
@@ -408,17 +493,20 @@ pytest --cov --cov-report=term-missing
   buy→unlock→remove cycle, but not for a user manually starting from the
   Unlock point with cars they'd already driven. `run_unlock_iteration()`
   used to just sleep `LOADING_NON_PRELOADED_CAR_WAIT` after selecting a car
-  and hope it landed on the showcase in time. Reworked to match
-  `remove._select_non_farm_car_as_active()`'s existing approach: poll
-  `vision._read_car_screen_buttons()` against `CAR_SHOWCASE_KEYWORDS` /
-  `CAR_LOADED_MENU_KEYWORDS` instead of guessing a fixed wait (start
-  polling after `CAR_LOAD_POLL_START_DELAY=5s`, every
-  `CAR_LOAD_POLL_INTERVAL=1s`, give up after `CAR_LOAD_POLL_MAX_SECONDS=20s`).
-  The give-up default is the *opposite* of remove.py's: Unlock almost always
-  processes the farm's own freshly-bought cars, so the showcase view is by
-  far the more likely true state on a give-up, unlike
-  `_select_non_farm_car_as_active()` (switches to some *other*, likely-
-  already-driven car, where assuming already-loaded is the better bet) —
+  and hope it landed on the showcase in time. Reworked to match the same
+  approach `remove.py`'s car-switch helper used at the time
+  (`_select_non_farm_car_as_active()`, since replaced by
+  `_switch_to_multiplier_car()`/`_wait_for_multiplier_car_loaded()` — see the
+  Remove-phase-reorder entry below): poll `vision._read_car_screen_buttons()`
+  against `CAR_SHOWCASE_KEYWORDS` / `CAR_LOADED_MENU_KEYWORDS` instead of
+  guessing a fixed wait (start polling after `CAR_LOAD_POLL_START_DELAY=5s`,
+  every `CAR_LOAD_POLL_INTERVAL=1s`, give up after
+  `CAR_LOAD_POLL_MAX_SECONDS=20s`). The give-up default is the *opposite* of
+  remove.py's: Unlock almost always processes the farm's own freshly-bought
+  cars, so the showcase view is by far the more likely true state on a
+  give-up, unlike remove.py's car-switch helper (which — both before and
+  after the later reorder — switches to/lands on a car that's virtually
+  always already-driven, where assuming already-loaded is the better bet) —
   don't copy remove.py's give-up direction here without re-checking which
   way the odds actually point for the caller. The escape-out-of-showcase
   step only runs when the showcase is actually detected (or assumed, on
@@ -426,14 +514,15 @@ pytest --cov --cov-report=term-missing
   since it's now conditional, applied by the caller first when needed. This
   removed `LOADING_NON_PRELOADED_CAR_WAIT` entirely (from `config.py`,
   `farm_settings.TIMING_DEFAULTS`, and both the Timings tab and Guide tab's
-  UNLOCK/REMOVE sections) — one fewer thing for the user to configure, and
-  it also means a car already loaded from earlier the same session no
-  longer needs the full non-preloaded-length wait at all. The routine
-  "Waiting Ns, then polling..." / "Car hasn't been loaded before..." /
-  "Car already loaded..." progress prints (in both this and
-  `remove._select_non_farm_car_as_active`, which follows the same pattern
-  but isn't a shared function) were removed per user feedback — silent
-  during normal polling, keeping only the `[WARN]` give-up line.
+  UNLOCK/REMOVE sections, since renamed/merged — see the Fallback Timings
+  entry below) — one fewer thing for the user to configure, and it also
+  means a car already loaded from earlier the same session no longer needs
+  the full non-preloaded-length wait at all. The routine "Waiting Ns, then
+  polling..." / "Car hasn't been loaded before..." / "Car already
+  loaded..." progress prints (in both this and remove.py's car-switch
+  helper, which followed the same pattern but wasn't a shared function)
+  were removed per user feedback — silent during normal polling, keeping
+  only the `[WARN]` give-up line.
 - **The Buy tab's summary line used to show a hardcoded, often-wrong
   "then {CHALLENGES_SUBSEQUENT}×/cycle"** (e.g. "4× first, then 98×/cycle")
   whenever `sp_remaining > 0` after the planned unlock — that branch never

@@ -2,7 +2,7 @@
 9x multiplier car filter + position.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -38,14 +38,21 @@ class SettingsTabMixin:
         vbox.setContentsMargins(16, 16, 16, 12)
         vbox.setSpacing(10)
 
-        def _row(parent_layout, label: str, widget, hint: str = "") -> None:
+        def _row(parent_layout, label: str, widget, hint: str = "") -> list:
+            """Returns the widgets it created, so callers that need to show/hide
+            the whole row per selected car (e.g. Super Wheelspins) can group them."""
             row = QHBoxLayout()
-            row.addWidget(_fixed_label(label, 160))
+            lbl = _fixed_label(label, 160)
+            row.addWidget(lbl)
             row.addWidget(widget)
+            widgets = [lbl, widget]
             if hint:
-                row.addWidget(_small(hint))
+                hint_lbl = _small(hint)
+                row.addWidget(hint_lbl)
+                widgets.append(hint_lbl)
             row.addStretch()
             parent_layout.addLayout(row)
+            return widgets
 
         # ── Farm car ──────────────────────────────────────────────────────────
         car_box = QGroupBox("FARM CAR")
@@ -105,11 +112,18 @@ class SettingsTabMixin:
         self._set_sp = _readonly_spin(config.SKILL_POINTS_CAP)
         _row(car_col, "SP to Unlock", self._set_sp, "skill points per car")
 
+        # Super Wheelspins / Wheelspins / CR Reward: not every car grants all
+        # three (some grant CR instead of wheelspins, or a mix) — each row
+        # hides itself in _load_car_fields() when that car's yield is 0,
+        # rather than showing a permanent "0" for a reward type it doesn't have.
         self._set_sws = _readonly_spin(20)
-        _row(car_col, "Super Wheelspins", self._set_sws, "yield per car")
+        self._sws_widgets = _row(car_col, "Super Wheelspins", self._set_sws, "yield per car")
 
         self._set_ws = _readonly_spin(20)
-        _row(car_col, "Wheelspins", self._set_ws, "yield per car")
+        self._ws_widgets = _row(car_col, "Wheelspins", self._set_ws, "yield per car")
+
+        self._set_cr_reward = _readonly_spin(99_999_999)
+        self._cr_reward_widgets = _row(car_col, "CR Reward", self._set_cr_reward, "CR yield per car")
 
         vbox.addWidget(car_box)
 
@@ -129,13 +143,6 @@ class SettingsTabMixin:
         code_row.addWidget(self._copy_code_btn)
         code_row.addStretch()
         ch_col.addLayout(code_row)
-
-        self._set_whats_next_chk = QCheckBox('"What\'s Next" enabled (HUD && Gameplay)')
-        whats_next_row = QHBoxLayout()
-        whats_next_row.addWidget(self._set_whats_next_chk)
-        whats_next_row.addWidget(_info_button(self._show_whats_next_info))
-        whats_next_row.addStretch()
-        ch_col.addLayout(whats_next_row)
 
         vbox.addWidget(ch_box)
 
@@ -198,6 +205,20 @@ class SettingsTabMixin:
 
         vbox.addWidget(mult_box)
 
+        # ── Remove / cycle behavior ────────────────────────────────────────────
+        remove_box = QGroupBox("REMOVE")
+        remove_col = QVBoxLayout(remove_box)
+        remove_col.setSpacing(8)
+
+        self._set_skip_remove_chk = QCheckBox("Skip Remove in Cycle")
+        skip_remove_row = QHBoxLayout()
+        skip_remove_row.addWidget(self._set_skip_remove_chk)
+        skip_remove_row.addWidget(_info_button(self._show_skip_remove_info))
+        skip_remove_row.addStretch()
+        remove_col.addLayout(skip_remove_row)
+
+        vbox.addWidget(remove_box)
+
         # ── In-game overlay ────────────────────────────────────────────────────
         overlay_box = QGroupBox("IN-GAME OVERLAY")
         overlay_col = QVBoxLayout(overlay_box)
@@ -218,21 +239,40 @@ class SettingsTabMixin:
         self._settings_econ.setWordWrap(True)
         vbox.addWidget(self._settings_econ)
 
-        save_row = QHBoxLayout()
-        self._settings_save_btn = QPushButton("SAVE SETTINGS")
-        self._settings_save_btn.setProperty("class", "primary-btn")
-        self._settings_save_btn.setMinimumHeight(36)
-        self._settings_status = QLabel("")
+        self._settings_status = QLabel("Changes save automatically")
         self._settings_status.setProperty("class", "small-label")
-        save_row.addWidget(self._settings_save_btn, 1)
-        save_row.addWidget(self._settings_status)
-        vbox.addLayout(save_row)
+        vbox.addWidget(self._settings_status)
         vbox.addStretch()
+
+        # Every editable field auto-saves — no Save button to miss while
+        # scrolled down a long tab. Debounced so a spinbox drag/typed number
+        # doesn't write the settings file on every single keystroke.
+        self._settings_autosave_timer = QTimer(self)
+        self._settings_autosave_timer.setSingleShot(True)
+        self._settings_autosave_timer.timeout.connect(self._save_settings)
+        # Guards _load_settings_fields()'s own setValue()/setChecked() calls
+        # from being mistaken for user edits — otherwise just opening this
+        # tab would immediately autosave car_collection_configured=True /
+        # multiplier_car_configured=True with whatever default values happen
+        # to be sitting in the spinboxes, before the user has set up anything.
+        self._loading_settings = False
 
         self._set_car_combo.currentIndexChanged.connect(lambda _i: self._load_car_fields())
         self._set_soko78_chk.toggled.connect(lambda _checked: self._load_car_fields())
         self._set_overlay_chk.toggled.connect(self.set_overlay_enabled)
-        self._settings_save_btn.clicked.connect(self._on_save_settings)
+        for _signal in (
+            self._set_car_combo.currentIndexChanged,
+            self._set_shop_row.valueChanged,
+            self._set_shop_col.valueChanged,
+            self._set_soko78_chk.toggled,
+            self._set_filter_perf.valueChanged,
+            self._set_filter_type.valueChanged,
+            self._set_mult_row.valueChanged,
+            self._set_mult_col.valueChanged,
+            self._set_skip_remove_chk.toggled,
+            self._set_overlay_chk.toggled,
+        ):
+            _signal.connect(lambda *_: self._schedule_autosave())
         self._copy_code_btn.clicked.connect(self._on_copy_share_code)
 
         self._load_settings_fields()
@@ -244,21 +284,25 @@ class SettingsTabMixin:
         return scroll
 
     def _load_settings_fields(self) -> None:
-        cfg = config.CFG
-        idx = self._set_car_combo.findData(cfg.selected_car)
-        if idx >= 0:
-            self._set_car_combo.setCurrentIndex(idx)
-        # Set before _load_car_fields() so the Price preview reflects it on first load.
-        self._set_soko78_chk.setChecked(cfg.soko78_house_owned)
-        self._load_car_fields()
-        self._set_code.setText(config.CHALLENGE_SHARE_CODE)
-        self._set_whats_next_chk.setChecked(cfg.whats_next_enabled)
-        self._set_filter_perf.setValue(cfg.filter_performance_class_row + 1)
-        self._set_filter_type.setValue(cfg.filter_car_type_row + 1)
-        self._set_mult_col.setValue(cfg.multiplier_car_col + 1)
-        self._set_mult_row.setValue(cfg.multiplier_car_row + 1)
-        self._set_overlay_chk.setChecked(cfg.show_ingame_overlay)
-        self._update_settings_econ()
+        self._loading_settings = True
+        try:
+            cfg = config.CFG
+            idx = self._set_car_combo.findData(cfg.selected_car)
+            if idx >= 0:
+                self._set_car_combo.setCurrentIndex(idx)
+            # Set before _load_car_fields() so the Price preview reflects it on first load.
+            self._set_soko78_chk.setChecked(cfg.soko78_house_owned)
+            self._load_car_fields()
+            self._set_code.setText(config.CHALLENGE_SHARE_CODE)
+            self._set_filter_perf.setValue(cfg.filter_performance_class_row + 1)
+            self._set_filter_type.setValue(cfg.filter_car_type_row + 1)
+            self._set_mult_col.setValue(cfg.multiplier_car_col + 1)
+            self._set_mult_row.setValue(cfg.multiplier_car_row + 1)
+            self._set_skip_remove_chk.setChecked(cfg.skip_remove_in_cycle)
+            self._set_overlay_chk.setChecked(cfg.show_ingame_overlay)
+            self._update_settings_econ()
+        finally:
+            self._loading_settings = False
 
     def _load_car_fields(self) -> None:
         car_id = self._set_car_combo.currentData()
@@ -272,6 +316,13 @@ class SettingsTabMixin:
         self._set_sp.setValue(info.sp_to_unlock)
         self._set_sws.setValue(info.super_wheelspins)
         self._set_ws.setValue(info.wheelspins)
+        self._set_cr_reward.setValue(info.cr_reward)
+        for w in self._sws_widgets:
+            w.setVisible(info.super_wheelspins > 0)
+        for w in self._ws_widgets:
+            w.setVisible(info.wheelspins > 0)
+        for w in self._cr_reward_widgets:
+            w.setVisible(info.cr_reward > 0)
         self._set_shop_col.setValue(user.car_collection_col + 1)  # stored 0-based, shown 1-based
         self._set_shop_row.setValue(user.car_collection_row + 1)
 
@@ -291,8 +342,8 @@ class SettingsTabMixin:
     def _show_multiplier_position_info(self) -> None:
         self._show_settings_info("multiplier_position")
 
-    def _show_whats_next_info(self) -> None:
-        self._show_settings_info("whats_next")
+    def _show_skip_remove_info(self) -> None:
+        self._show_settings_info("skip_remove_in_cycle")
 
     def _show_overlay_info(self) -> None:
         self._show_settings_info("overlay")
@@ -308,13 +359,29 @@ class SettingsTabMixin:
 
     def _update_settings_econ(self) -> None:
         car = config.CFG.car
+        # Not every car grants all three reward types — build the yield
+        # clause from whichever ones this car actually has (see the Super
+        # Wheelspins/Wheelspins/CR Reward row visibility in _load_car_fields).
+        yield_parts = []
+        if car.super_wheelspins > 0:
+            yield_parts.append(f"{config.NUM_CARS * car.super_wheelspins} Super WS")
+        if car.wheelspins > 0:
+            yield_parts.append(f"{config.NUM_CARS * car.wheelspins} WS")
+        if car.cr_reward > 0:
+            yield_parts.append(f"{config.NUM_CARS * car.cr_reward:,} CR")
+        yield_txt = " + ".join(yield_parts) if yield_parts else "no reward configured"
         self._settings_econ.setText(
             f"{config.NUM_CARS} cars × {config.CAR_PRICE_CR:,} CR = {config.TOTAL_COST_CR:,} CR/cycle"
-            f"  →  {config.NUM_CARS * car.super_wheelspins} Super WS + {config.NUM_CARS * car.wheelspins} WS"
+            f"  →  {yield_txt}"
             f"  →  {config.CHALLENGES_SUBSEQUENT} challenges/cycle"
         )
 
-    def _on_save_settings(self) -> None:
+    def _schedule_autosave(self) -> None:
+        if self._loading_settings:
+            return
+        self._settings_autosave_timer.start(400)
+
+    def _save_settings(self) -> None:
         cfg = config.CFG
         car_id = self._set_car_combo.currentData()
         car = cfg.cars[car_id]
@@ -322,13 +389,13 @@ class SettingsTabMixin:
         car.car_collection_row = self._set_shop_row.value() - 1
         car.car_collection_configured = True
         cfg.selected_car = car_id
-        cfg.whats_next_enabled = self._set_whats_next_chk.isChecked()
         cfg.soko78_house_owned = self._set_soko78_chk.isChecked()
         cfg.filter_performance_class_row = self._set_filter_perf.value() - 1
         cfg.filter_car_type_row = self._set_filter_type.value() - 1
         cfg.multiplier_car_col = self._set_mult_col.value() - 1
         cfg.multiplier_car_row = self._set_mult_row.value() - 1
         cfg.multiplier_car_configured = True
+        cfg.skip_remove_in_cycle = self._set_skip_remove_chk.isChecked()
         cfg.show_ingame_overlay = self._set_overlay_chk.isChecked()
 
         farm_settings.save(cfg)

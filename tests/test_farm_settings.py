@@ -12,10 +12,26 @@ def test_default_settings_when_file_missing(tmp_path):
     assert settings.selected_car == "lambo_revuelto"
     assert settings.car.car_collection_configured is False
     assert settings.multiplier_car_configured is False
-    assert settings.whats_next_enabled is False
     assert settings.soko78_house_owned is False
     assert settings.car.price_cr == 365_000  # base price, no discount by default
+    assert settings.car.cr_reward == 0  # wheelspin-only car, no CR reward
     assert settings.timings == farm_settings.TIMING_DEFAULTS
+
+
+def test_cr_reward_car_has_no_wheelspins():
+    """The Viper unlocks a straight CR reward instead of wheelspins — the
+    inverse of the Lambo default, exercising CarInfo.cr_reward's own path."""
+    viper = farm_settings.CAR_CATALOG["dodge_viper_gts_acr"]
+    assert viper.cr_reward == 150_000
+    assert viper.super_wheelspins == 0
+    assert viper.wheelspins == 0
+
+
+def test_settings_car_reflects_selected_cars_cr_reward(tmp_path):
+    settings = farm_settings.load(tmp_path / "does_not_exist.json")
+    settings.selected_car = "dodge_viper_gts_acr"
+    assert settings.car.cr_reward == 150_000
+    assert settings.car.price_cr == 68_000  # base price, no discount by default
 
 
 def test_effective_price_cr_no_discount():
@@ -33,12 +49,17 @@ def test_settings_car_price_reflects_soko78_house_owned(tmp_path):
     assert settings.car.price_cr == 346_750
 
 
-def test_whats_next_enabled_roundtrip(tmp_path):
+def test_skip_remove_in_cycle_defaults_false(tmp_path):
+    settings = farm_settings.load(tmp_path / "does_not_exist.json")
+    assert settings.skip_remove_in_cycle is False
+
+
+def test_skip_remove_in_cycle_roundtrip(tmp_path):
     path = tmp_path / "settings.json"
-    path.write_text(json.dumps({"whats_next_enabled": True}), encoding="utf-8")
+    path.write_text(json.dumps({"skip_remove_in_cycle": True}), encoding="utf-8")
 
     settings = farm_settings.load(path)
-    assert settings.whats_next_enabled is True
+    assert settings.skip_remove_in_cycle is True
 
 
 def test_save_and_load_roundtrip(tmp_path):

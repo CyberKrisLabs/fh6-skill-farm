@@ -4,7 +4,47 @@ Start with cursor on the configured farm car in the Car Collection
 (see _navigate_car_collection_to_car). Runs config.NUM_CARS times.
 """
 
-from farm_core import config, keys
+from farm_core import config, keys, vision
+
+# transition_to_buy's fast-travel lands on the Buy & Sell tab of the
+# House/Festival site menu, not a specific car's own screen — there's no
+# showcase-vs-loaded fork here like unlock._wait_for_car_loaded /
+# remove._wait_for_multiplier_car_loaded (those are "Get in Car" on one
+# specific car; this is arriving at a menu tab). It just happens to share the
+# same button bar text (Select | Back | Forzavista | Set as Home | Series
+# Update | Drive — vision.CAR_LOADED_MENU_KEYWORDS) FH6 shows for whichever
+# car is highlighted on any car-browsing screen, which doubles as a fine
+# anchor for "the tab has finished loading" here too.
+#
+# Not user-tunable in Timings, unlike most other waits in this codebase —
+# this replaces LOADING_TRAVEL_WAIT (removed entirely, see
+# docs/state-detection-plan.md #1) rather than keeping it as a poll ceiling:
+# the anchor is solid (reused, not new/unverified) and the 30s ceiling has
+# generous margin over every measured LOADING_TRAVEL_WAIT value (10-12s), so
+# there's nothing left for a user to usefully tune here.
+TRAVEL_LOAD_POLL_START_DELAY = 5  # settle time before the first check
+TRAVEL_LOAD_POLL_INTERVAL = 1  # poll cadence once polling starts
+TRAVEL_LOAD_POLL_MAX_SECONDS = 30  # give up after this long and proceed anyway
+
+
+def _wait_for_travel_loaded() -> None:
+    """Poll for the Buy & Sell tab's button bar after the fast-travel loading
+    screen, instead of a blind fixed wait. Gives up and proceeds anyway after
+    TRAVEL_LOAD_POLL_MAX_SECONDS if it's never detected.
+    """
+    keys._sleep(TRAVEL_LOAD_POLL_START_DELAY)
+    if keys._stop_event.is_set():
+        return
+    elapsed = TRAVEL_LOAD_POLL_START_DELAY
+    while elapsed < TRAVEL_LOAD_POLL_MAX_SECONDS:
+        buttons = vision._read_car_screen_buttons()
+        if any(kw in buttons for kw in vision.CAR_LOADED_MENU_KEYWORDS):
+            return
+        keys._sleep(TRAVEL_LOAD_POLL_INTERVAL)
+        elapsed += TRAVEL_LOAD_POLL_INTERVAL
+        if keys._stop_event.is_set():
+            return
+    print(f"  [WARN] Buy & Sell tab not detected after {TRAVEL_LOAD_POLL_MAX_SECONDS}s — proceeding anyway")
 
 
 def run_buy_iteration():
@@ -40,8 +80,9 @@ def transition_to_buy():
 
     Mid-way, this fast-travels from Free Roam into the House or the Festival
     site — whichever fast-travel destination the account has unlocked, both
-    land on the same menus — and waits for that loading screen to finish (see
-    config.LOADING_TRAVEL_WAIT) before navigating on to the Car Collection.
+    land on the same Buy & Sell tab — and polls for that loading screen to
+    finish (see _wait_for_travel_loaded) before paging over to the Campaign
+    tab and navigating on to the Car Collection.
     """
     keys.mp("escape")
     keys._sleep(1)  # wait for menu to settle after escaping open world
@@ -52,8 +93,8 @@ def transition_to_buy():
     keys.mp("enter")
     if keys._stop_event.is_set():
         return
-    keys._press_key("enter")
-    keys._sleep(config.LOADING_TRAVEL_WAIT)  # loading screen: Free Roam -> House/Festival site
+    keys._press_key("enter")  # fast-travel: Free Roam -> House/Festival site
+    _wait_for_travel_loaded()
     if keys._stop_event.is_set():
         return
     keys.mp("pageup", 1, config.PAGE_WAIT)

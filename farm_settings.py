@@ -51,37 +51,20 @@ TIMING_DEFAULTS: dict[str, float] = {
     "NAV_WAIT": 0.05,
     "PAGE_WAIT": 2,
     "TYPING_WAIT": 0.2,
-    "LOADING_AFTER_CHALLENGE_EXIT_WAIT": 18,
-    "LOADING_TRAVEL_WAIT": 10,
-    "LOADING_CHALLENGE_WAIT": 25,
-    "LOADING_RETRY_WAIT": 23.5,
-    "LOADING_EXIT_TO_GAME_WAIT": 9,
+    "LOADING_AFTER_CHALLENGE_EXIT_WAIT": 20,
+    "LOADING_CHALLENGE_WAIT": 30,
+    "LOADING_RETRY_WAIT": 30,
+    "LOADING_EXIT_TO_GAME_WAIT": 15,
 }
 
-# Menu-navigation waits (MENU_WAIT/NAV_WAIT/PAGE_WAIT/TYPING_WAIT) and most
-# LOADING_* waits are paced by the game's own menu animations, which measured
-# identically on a tested desktop and a tested laptop running FH6 at 1024x768
-# for smoothness. The two that DID differ were both genuine asset-loading
-# waits: LOADING_TRAVEL_WAIT (Free Roam -> House/Festival fast-travel) and
-# LOADING_CHALLENGE_WAIT (challenge search -> loaded into the challenge).
-# "Fast" matches the tested desktop; "Slow" matches the tested laptop; "Mid"
-# splits the difference for hardware in between. Everything else is left at
-# TIMING_DEFAULTS across all three tiers on purpose — there's no measurement
-# yet showing those need to vary, and inventing numbers without evidence
-# would just be a guess dressed up as a preset.
-TIMING_PRESETS: dict[str, dict[str, float]] = {
-    "Fast": dict(TIMING_DEFAULTS),
-    "Mid": {
-        **TIMING_DEFAULTS,
-        "LOADING_TRAVEL_WAIT": 11.0,
-        "LOADING_CHALLENGE_WAIT": 27.0,
-    },
-    "Slow": {
-        **TIMING_DEFAULTS,
-        "LOADING_TRAVEL_WAIT": 12.0,
-        "LOADING_CHALLENGE_WAIT": 29.0,
-    },
-}
+# Fast/Mid/Slow presets used to live here, varying LOADING_CHALLENGE_WAIT
+# (and, before it was removed, LOADING_TRAVEL_WAIT — see
+# docs/state-detection-plan.md #1) between hardware tiers. Removed once all
+# four LOADING_* waits became fallback-only ceilings behind drivable-HUD
+# detection (docs/state-detection-plan.md #2/#3/#4/#5): most users now rarely
+# hit these at all, so a hardware-tier preset for them stopped pulling its
+# weight — tune them individually in the Timings tab if the fallback ever
+# actually fires for you.
 
 
 @dataclasses.dataclass(frozen=True)
@@ -97,9 +80,14 @@ class CarInfo:
     car_id: str  # keys UNLOCK_SEQUENCES in farm_core/unlock.py
     name: str
     price_cr: int  # base Autoshow price — full price, before the Soko 78 discount
-    sp_to_unlock: int  # skill points spent to reach the wheelspin skills
+    sp_to_unlock: int  # skill points spent to reach the wheelspin skills (or CR reward)
     super_wheelspins: int  # yield per car
     wheelspins: int  # yield per car
+    # CR granted per car instead of/alongside wheelspins — some cars' skill
+    # trees unlock a straight Credits reward at this node rather than (or in
+    # addition to) wheelspins. 0 for cars that don't have one. Defaults to 0
+    # so existing wheelspin-only entries don't need to spell it out.
+    cr_reward: int = 0
 
 
 CAR_CATALOG: dict[str, CarInfo] = {
@@ -110,6 +98,15 @@ CAR_CATALOG: dict[str, CarInfo] = {
         sp_to_unlock=39,
         super_wheelspins=1,
         wheelspins=3,
+    ),
+    "dodge_viper_gts_acr": CarInfo(
+        car_id="dodge_viper_gts_acr",
+        name="Dodge Viper GTS ACR",
+        price_cr=68_000,  # 64,600 CR with the Soko 78 discount
+        sp_to_unlock=30,
+        super_wheelspins=0,
+        wheelspins=0,
+        cr_reward=150_000,
     ),
 }
 
@@ -161,6 +158,7 @@ class Car:
     sp_to_unlock: int
     super_wheelspins: int
     wheelspins: int
+    cr_reward: int
     car_collection_col: int
     car_collection_row: int
     car_collection_configured: bool
@@ -191,12 +189,6 @@ class Settings:
     # Settings tab — see CarConfig.car_collection_configured for why 0 can't
     # be used as an "unset" sentinel here either.
     multiplier_car_configured: bool
-    # Whether the user has FH6's "What's Next" (HUD & Gameplay settings) turned
-    # on. When it is, an extra Select/Back screen appears after exiting the
-    # challenge, before landing back in Free Roam — see
-    # farm_core.challenge.WHATS_NEXT_EXIT_WAIT. Genuinely per-user (depends on
-    # the player's own in-game settings), so it belongs here, not in code.
-    whats_next_enabled: bool
     # Whether the account owns the "Soko 78" house — grants a 5% discount on
     # Autoshow car prices (see CarInfo.price_cr / effective_price_cr above).
     # Off by default: not every account owns it, so assuming it would
@@ -207,6 +199,17 @@ class Settings:
     # optional convenience, not everyone wants an extra HUD element on top
     # of the game.
     show_ingame_overlay: bool
+    # Whether the automatic buy/unlock/remove cycle should skip the Remove
+    # step entirely (for users who'd rather keep or gift the cars themselves
+    # — e.g. FH6's Gift Drop, which has no way to sort/filter down to just
+    # the farm's own cars, so the farm can't drive that flow itself). Off by
+    # default — removing is the farm's normal behavior. Only gates the
+    # AUTOMATIC cycle: manually picking "Remove" as the Start From point
+    # still actually removes regardless of this setting — see
+    # farm_core.orchestrator._run_farm_inner. Doesn't affect Buy/Unlock; if
+    # left on across many sessions, the garage's 2000-car cap becomes the
+    # user's own responsibility to manage (see the Settings ⓘ info).
+    skip_remove_in_cycle: bool
     # User-editable wait constants (Timings tab) — see TIMING_DEFAULTS.
     timings: dict[str, float]
 
@@ -221,6 +224,7 @@ class Settings:
             sp_to_unlock=info.sp_to_unlock,
             super_wheelspins=info.super_wheelspins,
             wheelspins=info.wheelspins,
+            cr_reward=info.cr_reward,
             car_collection_col=user.car_collection_col,
             car_collection_row=user.car_collection_row,
             car_collection_configured=user.car_collection_configured,
@@ -245,9 +249,9 @@ def _default_settings() -> Settings:
         multiplier_car_col=0,
         multiplier_car_row=0,
         multiplier_car_configured=False,
-        whats_next_enabled=False,
         soko78_house_owned=False,
         show_ingame_overlay=False,
+        skip_remove_in_cycle=False,
         timings=dict(TIMING_DEFAULTS),
     )
 
@@ -283,9 +287,9 @@ def load(path: pathlib.Path = SETTINGS_PATH) -> Settings:
         "multiplier_car_col",
         "multiplier_car_row",
         "multiplier_car_configured",
-        "whats_next_enabled",
         "soko78_house_owned",
         "show_ingame_overlay",
+        "skip_remove_in_cycle",
     ):
         if field in data:
             setattr(settings, field, data[field])

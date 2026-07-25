@@ -46,8 +46,29 @@ TRANSITIONS = {
 
 PHASES = ["challenge", "buy", "unlock", "remove"]
 
+# Settle time after escaping the My Cars list at the end of the Remove phase —
+# the default MENU_WAIT (0.5s) isn't enough for this transition to register,
+# same reasoning as unlock.CAR_SHOWCASE_EXIT_WAIT for a similar list-closing step.
+CAR_LIST_EXIT_WAIT = 2
 
-def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=None):
+
+def _exit_remove_phase_to_game() -> None:
+    """Shared tail for both the full Remove loop and the skip-remove path:
+    back out of the car list into Free Roam, then reopen the Main Menu for
+    the next transition.
+    """
+    if keys._stop_event.is_set():
+        return
+    keys.mp("escape", wait=CAR_LIST_EXIT_WAIT)  # Escape out of the car list (My Cars)
+    keys.mp("escape")  # Escape out of the car menu to return to the game
+    challenge._wait_for_drivable(
+        challenge.DRIVABLE_POLL_START_DELAY_SHORT, config.LOADING_EXIT_TO_GAME_WAIT, "remove exit"
+    )
+    print("  Navigating back to main menu...")
+    keys.mp("escape")  # Escape to open the Main Menu
+
+
+def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=None, skip_remove=False):
     if num_cars is None:
         num_cars = config.NUM_CARS
     if name == "challenge":
@@ -129,21 +150,23 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
         return _ocr_sp, effective
 
     elif name == "remove":
-        print(f"Phase: REMOVE — removing {num_cars} cars")
-        remove._select_non_farm_car_as_active()
-        unlock._open_cars_sorted_by_recent()
-        for i in range(1, num_cars + 1):
-            if keys._stop_event.is_set():
-                break
-            print(f"  Remove {i}/{num_cars}")
-            _report_progress("remove", i, num_cars)
-            remove.run_remove_iteration()
-        if not keys._stop_event.is_set():
+        if skip_remove:
+            print("Phase: REMOVE — skipped (Skip Remove in Cycle enabled), switching to 9x multiplier car")
+            _report_progress("remove", 1, 1)
             remove._switch_to_multiplier_car()
-            keys.mp("escape")  # Escape out of the car menu to return to the game
-            keys._sleep(config.LOADING_EXIT_TO_GAME_WAIT)
-            print("  Navigating back to main menu...")
-            keys.mp("escape")  # Escape to open the Main Menu
+            _exit_remove_phase_to_game()
+        else:
+            print(f"Phase: REMOVE — removing {num_cars} cars")
+            remove._switch_to_multiplier_car()
+            keys.mp("enter")  # Back into the car list (My Cars), not the game — remove loop runs here
+            unlock._open_cars_sorted_by_recent()
+            for i in range(1, num_cars + 1):
+                if keys._stop_event.is_set():
+                    break
+                print(f"  Remove {i}/{num_cars}")
+                _report_progress("remove", i, num_cars)
+                remove.run_remove_iteration()
+            _exit_remove_phase_to_game()
 
 
 class _Tee:
@@ -415,7 +438,13 @@ def _run_farm_inner(
                     if not is_first_action and phase in TRANSITIONS:
                         print(f"Transition: navigating to {phase}...")
                         TRANSITIONS[phase]()
-                    run_phase(phase, args, num_cars=_n(phase, b, u))
+                    # Skip only applies to the automatic cycle's own remove
+                    # step — an explicit "Start From: Remove" (cyc 1) still
+                    # actually removes regardless of the setting.
+                    skip_remove = (
+                        phase == "remove" and config.CFG.skip_remove_in_cycle and not (start == "remove" and cyc == 1)
+                    )
+                    run_phase(phase, args, num_cars=_n(phase, b, u), skip_remove=skip_remove)
                 is_first_action = False
 
             if "buy" in phases_this_cycle and remaining_cr is not None:
@@ -433,7 +462,18 @@ def _run_farm_inner(
             if not is_first_action and phase in TRANSITIONS:
                 print(f"Transition: navigating to {phase}...")
                 TRANSITIONS[phase]()
-            run_phase(phase, args, num_cars=_n(phase, buy_count, unlock_count), expected_sp_hint=expected_sp_hint)
+            # Same exception as the cycle-mode dispatch above: an explicit
+            # "Start From: Remove" still actually removes regardless of the
+            # setting — only a remove reached naturally from another start
+            # point is skipped.
+            skip_remove = phase == "remove" and config.CFG.skip_remove_in_cycle and start != "remove"
+            run_phase(
+                phase,
+                args,
+                num_cars=_n(phase, buy_count, unlock_count),
+                expected_sp_hint=expected_sp_hint,
+                skip_remove=skip_remove,
+            )
             is_first_action = False
         if not keys._stop_event.is_set():
             print("All phases complete.")
