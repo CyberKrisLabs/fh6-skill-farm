@@ -95,6 +95,29 @@ farm_ui/                PySide6 GUI
   overlay.py                 IngameOverlay — optional always-on-top HUD shown over the FH6
                              window (Start/Stop, phase/cycle progress, last log line);
                              lifecycle owned by FarmTabMixin, off by default (Settings tab)
+  wizard.py                  SetupWizardDialog — 3-step guided setup for Car Collection
+                             Row/Column, then 9x Multiplier Car Filter + Position (the
+                             fields gating farm_tab._on_start's "Setup required" check).
+                             Each step pages through wizard_content.py's
+                             (image_filename, caption) slides one at a time (Prev/Next),
+                             falling back to a plain instructional paragraph if a step
+                             has no slides defined yet. Each Next/Finish saves
+                             immediately via the same farm_settings.save()/
+                             config.refresh_config() calls settings_tab.py's autosave
+                             uses, so closing partway through never loses an
+                             already-confirmed step. Opened from a "Setup Wizard" button
+                             atop the Settings tab (`SettingsTabMixin._open_setup_wizard`)
+                             and from an "Open Wizard" button on farm_tab.py's
+                             "Setup required" warning dialog.
+  wizard_content.py          WIZARD_STEPS: per-step title/fallback_text/slides for
+                             wizard.py — its own copy, deliberately NOT
+                             guide_content.SETTINGS_INFO (that's reference text for
+                             someone who already knows the app; the wizard walks a
+                             first-timer through the exact in-game clicks instead).
+                             Slide images live at assets/wizard/<folder>/<filename>.
+  paths.py                   resource_path() — PyInstaller-safe bundled-resource
+                             resolution, shared by app.py (window icon) and wizard.py
+                             (screenshots)
   app.py                     SkillFarmWindow (combines the tab mixins)
 ```
 

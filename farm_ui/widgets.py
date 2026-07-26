@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QValidator
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QSpinBox
+from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QPushButton, QSpinBox, QWidget
 
 
 def _is_subsequence(sub: str, full: str) -> bool:
@@ -126,3 +126,14 @@ def _required_label(text: str, width: int) -> QLabel:
     lbl = QLabel(f'{text} <span style="color:#FF5555;">*</span>')
     lbl.setFixedWidth(width)
     return lbl
+
+
+def _show_info_popup(parent: QWidget, title: str, text: str) -> None:
+    """Shared by the ⓘ info buttons (Settings/Timings tabs) and the Setup Wizard,
+    so the popup styling can't drift between call sites."""
+    dlg = QMessageBox(parent)
+    dlg.setWindowTitle(title)
+    dlg.setText(f"<b>{title}</b>")
+    dlg.setInformativeText(text)
+    dlg.setIcon(QMessageBox.Icon.Information)
+    dlg.exec()

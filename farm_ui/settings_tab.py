@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -24,7 +23,8 @@ from PySide6.QtWidgets import (
 import farm_settings
 from farm_core import config
 from farm_ui.guide_content import SETTINGS_INFO
-from farm_ui.widgets import _fixed_label, _info_button, _required_label, _small
+from farm_ui.widgets import _fixed_label, _info_button, _required_label, _sep, _show_info_popup, _small
+from farm_ui.wizard import SetupWizardDialog
 
 
 class SettingsTabMixin:
@@ -53,6 +53,16 @@ class SettingsTabMixin:
             row.addStretch()
             parent_layout.addLayout(row)
             return widgets
+
+        # ── Setup Wizard ─────────────────────────────────────────────────────
+        wizard_row = QHBoxLayout()
+        wizard_row.addWidget(_small("New here? Get step-by-step help setting up below."), 1)
+        wizard_btn = QPushButton("Setup Wizard")
+        wizard_btn.setProperty("class", "primary-btn")
+        wizard_btn.clicked.connect(self._open_setup_wizard)
+        wizard_row.addWidget(wizard_btn)
+        vbox.addLayout(wizard_row)
+        vbox.addWidget(_sep())
 
         # ── Farm car ──────────────────────────────────────────────────────────
         car_box = QGroupBox("FARM CAR")
@@ -350,12 +360,16 @@ class SettingsTabMixin:
 
     def _show_settings_info(self, key: str) -> None:
         title, text = SETTINGS_INFO[key]
-        dlg = QMessageBox(self)
-        dlg.setWindowTitle(title)
-        dlg.setText(f"<b>{title}</b>")
-        dlg.setInformativeText(text)
-        dlg.setIcon(QMessageBox.Icon.Information)
-        dlg.exec()
+        _show_info_popup(self, title, text)
+
+    def _open_setup_wizard(self) -> None:
+        SetupWizardDialog(self).exec()
+        # The wizard saves via farm_settings.save()/config.refresh_config() itself
+        # (same as _save_settings below) — just reload this tab + the Farm tab's
+        # fields/summary so they reflect whatever it saved.
+        self._load_settings_fields()
+        self._update_fields()
+        self._update_summary()
 
     def _update_settings_econ(self) -> None:
         car = config.CFG.car

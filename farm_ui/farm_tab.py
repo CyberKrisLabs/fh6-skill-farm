@@ -628,16 +628,22 @@ class FarmTabMixin:
             if not cfg.multiplier_car_configured:
                 missing.append("9x Multiplier Car Filter (Performance Class / Car Type Row) and Position")
             if missing:
-                QMessageBox.warning(
-                    self,
-                    "Setup required",
+                dlg = QMessageBox(self)
+                dlg.setWindowTitle("Setup required")
+                dlg.setIcon(QMessageBox.Icon.Warning)
+                dlg.setText(
                     "The following aren't set up yet (Settings tab):\n\n"
                     + "\n".join(f"• {m}" for m in missing)
                     + "\n\nThese are required so the farm can find your cars for Buy/Unlock/"
-                    "Remove and switch to the 9x multiplier car. Set them in Settings, or "
-                    'tick "Challenge Only" on this tab to skip all car setup and just loop '
-                    "the challenge.",
+                    "Remove and switch to the 9x multiplier car. Run the Setup Wizard to fill "
+                    'them in step by step, or tick "Challenge Only" on this tab to skip all '
+                    "car setup and just loop the challenge."
                 )
+                wizard_btn = dlg.addButton("Open Wizard", QMessageBox.ButtonRole.AcceptRole)
+                dlg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                dlg.exec()
+                if dlg.clickedButton() == wizard_btn:
+                    self._open_setup_wizard()
                 return
         keys._stop_event.clear()
         self._ocr_challenge_override = None

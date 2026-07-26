@@ -7,7 +7,6 @@ Points sub-tabs).
 
 import sys
 import threading
-from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
@@ -18,18 +17,10 @@ from farm_ui import theme
 from farm_ui.farm_tab import FarmTabMixin
 from farm_ui.guide_tab import GuideTabMixin
 from farm_ui.info_tab import InfoTabMixin, _update_bridge
+from farm_ui.paths import resource_path
 from farm_ui.settings_tab import SettingsTabMixin
 from farm_ui.timings_tab import TimingsTabMixin
 from farm_ui.widgets import _log_bridge
-
-
-def _resource_path(relative: str) -> Path:
-    """Resolve a bundled resource (e.g. the app icon), handling PyInstaller's
-    one-file extraction dir. During development, falls back to the repo root.
-    """
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-    return base / relative
-
 
 _NAV_STYLESHEET = """
 QListWidget {
@@ -63,7 +54,7 @@ class SkillFarmWindow(QMainWindow, FarmTabMixin, SettingsTabMixin, TimingsTabMix
         self.setFixedSize(730, 720)
 
         try:
-            icon_path = _resource_path("assets/skillfarm.ico")
+            icon_path = resource_path("assets/skillfarm.ico")
             if icon_path.is_file():
                 self.setWindowIcon(QIcon(str(icon_path)))
         except OSError:
