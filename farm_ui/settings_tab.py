@@ -75,6 +75,31 @@ class SettingsTabMixin:
         self._set_car_combo.setFixedWidth(200)
         _row(car_col, "Car", self._set_car_combo)
 
+        # "Use Auto-Found Position" — lets a user keep a Setup-Wizard-recorded
+        # navigation sequence on file but still choose manual Row/Column
+        # instead, without losing it (see
+        # farm_settings.CarConfig.car_collection_auto_found/
+        # car_collection_use_auto_find and
+        # farm_core.buy._navigate_car_collection_to_car). Only enabled once a
+        # sequence actually exists for the selected car — see
+        # _update_cc_mode_ui. Same checkbox/wording as the Setup Wizard's
+        # Step 1, kept in sync so the two can't drift.
+        self._set_cc_use_auto_chk = QCheckBox("Use Auto-Found Position")
+        self._set_cc_use_auto_chk.toggled.connect(self._on_cc_use_auto_toggled)
+        car_col.addWidget(self._set_cc_use_auto_chk)
+
+        self._set_cc_mode_label = _small("")
+        car_col.addWidget(self._set_cc_mode_label)
+
+        # Wrapped in one container so _refresh_cc_mode_display can disable BOTH
+        # rows (labels included — a disabled QWidget dims every descendant via Qt's
+        # normal disabled palette) in a single call, instead of disabling just the
+        # QSpinBoxes and leaving their labels/hints looking fully active/editable.
+        self._cc_fields_frame = QFrame()
+        cc_fields_col = QVBoxLayout(self._cc_fields_frame)
+        cc_fields_col.setContentsMargins(0, 0, 0, 0)
+        cc_fields_col.setSpacing(8)
+
         # Shown 1-based (row 1 = top car, counting down the list); stored 0-based as down presses.
         self._set_shop_row = QSpinBox()
         self._set_shop_row.setRange(1, 999)
@@ -85,7 +110,7 @@ class SettingsTabMixin:
         row_row.addWidget(_small("the car's row, from the top"))
         row_row.addWidget(_info_button(self._show_car_collection_info))
         row_row.addStretch()
-        car_col.addLayout(row_row)
+        cc_fields_col.addLayout(row_row)
 
         # Shown 1-based (column 1–5, left → right); stored 0-based as right presses.
         self._set_shop_col = QSpinBox()
@@ -97,9 +122,16 @@ class SettingsTabMixin:
         col_row.addWidget(_small("the car's column, 1–5"))
         col_row.addWidget(_info_button(self._show_car_collection_info))
         col_row.addStretch()
-        car_col.addLayout(col_row)
+        cc_fields_col.addLayout(col_row)
+
+        car_col.addWidget(self._cc_fields_frame)
 
         def _readonly_spin(max_value: int) -> QSpinBox:
+            """setReadOnly(True) alone prevents editing but doesn't dim the
+            field's appearance, misleadingly looking just as editable as a
+            real input — setEnabled(False) makes it LOOK non-interactive too
+            (theme.py's QSpinBox:disabled rule), on top of the read-only/
+            no-buttons/no-focus behavior kept here for defense in depth."""
             spin = QSpinBox()
             spin.setRange(0, max_value)
             spin.setFixedWidth(120)
@@ -107,6 +139,7 @@ class SettingsTabMixin:
             spin.setReadOnly(True)
             spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
             spin.setFocusPolicy(Qt.NoFocus)
+            spin.setEnabled(False)
             return spin
 
         self._set_price = _readonly_spin(99_999_999)
@@ -162,6 +195,26 @@ class SettingsTabMixin:
         filter_col = QVBoxLayout(filter_box)
         filter_col.setSpacing(8)
 
+        # "Use Auto-Found Filter" — same idea as Car Collection's checkbox
+        # above, for the Setup Wizard Step 2's recorded sequence (see
+        # farm_settings.Settings.filter_auto_found/filter_use_auto_find and
+        # farm_core.remove._switch_to_multiplier_car). Only enabled once a
+        # sequence actually exists — see _update_filter_mode_ui.
+        self._set_filter_use_auto_chk = QCheckBox("Use Auto-Found Filter")
+        self._set_filter_use_auto_chk.toggled.connect(self._on_filter_use_auto_toggled)
+        filter_col.addWidget(self._set_filter_use_auto_chk)
+
+        self._set_filter_mode_label = _small("")
+        filter_col.addWidget(self._set_filter_mode_label)
+
+        # Wrapped in one container so _refresh_filter_mode_display can disable BOTH
+        # rows (labels included) in a single call — see the identical reasoning on
+        # self._cc_fields_frame above.
+        self._filter_fields_frame = QFrame()
+        filter_fields_col = QVBoxLayout(self._filter_fields_frame)
+        filter_fields_col.setContentsMargins(0, 0, 0, 0)
+        filter_fields_col.setSpacing(8)
+
         self._set_filter_perf = QSpinBox()
         self._set_filter_perf.setRange(1, 99)
         self._set_filter_perf.setFixedWidth(80)
@@ -171,7 +224,7 @@ class SettingsTabMixin:
         filter_perf_row.addWidget(_small("row in the filter list"))
         filter_perf_row.addWidget(_info_button(self._show_multiplier_filter_info))
         filter_perf_row.addStretch()
-        filter_col.addLayout(filter_perf_row)
+        filter_fields_col.addLayout(filter_perf_row)
 
         self._set_filter_type = QSpinBox()
         self._set_filter_type.setRange(1, 99)
@@ -182,8 +235,9 @@ class SettingsTabMixin:
         filter_type_row.addWidget(_small("row in the filter list"))
         filter_type_row.addWidget(_info_button(self._show_multiplier_filter_info))
         filter_type_row.addStretch()
-        filter_col.addLayout(filter_type_row)
+        filter_fields_col.addLayout(filter_type_row)
 
+        filter_col.addWidget(self._filter_fields_frame)
         vbox.addWidget(filter_box)
 
         # ── Multiplier car position ───────────────────────────────────────────
@@ -306,6 +360,7 @@ class SettingsTabMixin:
             self._set_code.setText(config.CHALLENGE_SHARE_CODE)
             self._set_filter_perf.setValue(cfg.filter_performance_class_row + 1)
             self._set_filter_type.setValue(cfg.filter_car_type_row + 1)
+            self._update_filter_mode_ui()
             self._set_mult_col.setValue(cfg.multiplier_car_col + 1)
             self._set_mult_row.setValue(cfg.multiplier_car_row + 1)
             self._set_skip_remove_chk.setChecked(cfg.skip_remove_in_cycle)
@@ -335,6 +390,76 @@ class SettingsTabMixin:
             w.setVisible(info.cr_reward > 0)
         self._set_shop_col.setValue(user.car_collection_col + 1)  # stored 0-based, shown 1-based
         self._set_shop_row.setValue(user.car_collection_row + 1)
+        self._update_cc_mode_ui()
+
+    # ── Use Auto-Found Position/Filter ───────────────────────────────────────
+
+    def _refresh_cc_mode_display(self) -> None:
+        """Given the checkbox's CURRENT state, updates the manual fields'
+        enabled state and the mode label to match. Called on every toggle;
+        see _update_cc_mode_ui for the car-switch/reload path that also
+        reloads the checkbox's own state first."""
+        car_id = self._set_car_combo.currentData()
+        if car_id is None:
+            return
+        user = config.CFG.cars[car_id]
+        use_auto = self._set_cc_use_auto_chk.isChecked()
+        self._cc_fields_frame.setEnabled(not use_auto)
+        if not user.car_collection_auto_found:
+            self._set_cc_mode_label.setText("No position found automatically yet — using the manual Row/Column below.")
+        elif use_auto:
+            self._set_cc_mode_label.setText("Using the automatically found position — Row/Column below are disabled.")
+        else:
+            self._set_cc_mode_label.setText(
+                "Using the manual Row/Column below (an auto-found position is saved but not in use)."
+            )
+
+    def _on_cc_use_auto_toggled(self, _checked: bool) -> None:
+        self._refresh_cc_mode_display()
+        self._schedule_autosave()
+
+    def _update_cc_mode_ui(self) -> None:
+        """Reloads the checkbox's checked/enabled state for whichever car is
+        now selected, then refreshes the fields/label to match. Called on
+        tab build and whenever the Car dropdown changes."""
+        car_id = self._set_car_combo.currentData()
+        if car_id is None:
+            return
+        user = config.CFG.cars[car_id]
+        self._set_cc_use_auto_chk.blockSignals(True)
+        self._set_cc_use_auto_chk.setEnabled(user.car_collection_auto_found)
+        self._set_cc_use_auto_chk.setChecked(user.car_collection_auto_found and user.car_collection_use_auto_find)
+        self._set_cc_use_auto_chk.blockSignals(False)
+        self._refresh_cc_mode_display()
+
+    def _refresh_filter_mode_display(self) -> None:
+        cfg = config.CFG
+        use_auto = self._set_filter_use_auto_chk.isChecked()
+        self._filter_fields_frame.setEnabled(not use_auto)
+        if not cfg.filter_auto_found:
+            self._set_filter_mode_label.setText(
+                "No filter found automatically yet — using the manual Filter Rows below."
+            )
+        elif use_auto:
+            self._set_filter_mode_label.setText(
+                "Using the automatically found filter — Filter Rows below are disabled."
+            )
+        else:
+            self._set_filter_mode_label.setText(
+                "Using the manual Filter Rows below (an auto-found filter is saved but not in use)."
+            )
+
+    def _on_filter_use_auto_toggled(self, _checked: bool) -> None:
+        self._refresh_filter_mode_display()
+        self._schedule_autosave()
+
+    def _update_filter_mode_ui(self) -> None:
+        cfg = config.CFG
+        self._set_filter_use_auto_chk.blockSignals(True)
+        self._set_filter_use_auto_chk.setEnabled(cfg.filter_auto_found)
+        self._set_filter_use_auto_chk.setChecked(cfg.filter_auto_found and cfg.filter_use_auto_find)
+        self._set_filter_use_auto_chk.blockSignals(False)
+        self._refresh_filter_mode_display()
 
     def _on_copy_share_code(self) -> None:
         QApplication.clipboard().setText(self._set_code.text())
@@ -402,10 +527,12 @@ class SettingsTabMixin:
         car.car_collection_col = self._set_shop_col.value() - 1  # shown 1-based, stored 0-based
         car.car_collection_row = self._set_shop_row.value() - 1
         car.car_collection_configured = True
+        car.car_collection_use_auto_find = self._set_cc_use_auto_chk.isChecked()
         cfg.selected_car = car_id
         cfg.soko78_house_owned = self._set_soko78_chk.isChecked()
         cfg.filter_performance_class_row = self._set_filter_perf.value() - 1
         cfg.filter_car_type_row = self._set_filter_type.value() - 1
+        cfg.filter_use_auto_find = self._set_filter_use_auto_chk.isChecked()
         cfg.multiplier_car_col = self._set_mult_col.value() - 1
         cfg.multiplier_car_row = self._set_mult_row.value() - 1
         cfg.multiplier_car_configured = True

@@ -437,7 +437,21 @@ class FarmTabMixin:
                 cycles.append((n, ci))
                 remaining -= n * config.CAR_PRICE_CR
                 last_unlock = n
-            final_top_up = _buf(config.challenges_to_refill(last_unlock))
+            if first_iteration and first_subsequent_ci is not None:
+                # The loop never ran — not enough leftover CR for even one more car
+                # this session — but first_subsequent_ci is still the correct,
+                # SP-aware count for the very next challenge phase (computed from
+                # the user's entered skill_points, not "SP was already at the cap"),
+                # and that phase still runs unconditionally regardless of whether
+                # another buy cycle follows it (orchestrator.py's "CR exhausted"
+                # branch runs it either way). Falling through to the
+                # challenges_to_refill formula below silently discarded this value
+                # and badly undercounted — that formula assumes SP was already at
+                # the cap going into the last unlock, which is only true from
+                # cycle 2 onward, not for a fresh Buy/Unlock/Remove start.
+                final_top_up = first_subsequent_ci
+            else:
+                final_top_up = _buf(config.challenges_to_refill(last_unlock))
             return cycles, final_top_up
 
         def _cycle_tag(first_buy_count: int, initial_last_unlock: int, first_subsequent_ci=None) -> str:

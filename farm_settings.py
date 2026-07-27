@@ -88,6 +88,20 @@ class CarInfo:
     # addition to) wheelspins. 0 for cars that don't have one. Defaults to 0
     # so existing wheelspin-only entries don't need to spell it out.
     cr_reward: int = 0
+    # Split out from the combined `name` above specifically for the Setup
+    # Wizard's "Find Automatically" search (farm_core/car_collection_finder.py) — the
+    # Car Collection card shows model name on one line, then "year
+    # manufacturer" on the next, and matching needs each piece on its own
+    # (a combined "Lamborghini Revuelto" string can't be matched against
+    # that two-line layout the same way — see
+    # docs/car-position-autodetect-plan.md's Data gap section). `name`
+    # remains the single display string used everywhere else in the UI;
+    # these three are ONLY for that search. Uppercase, matching how OCR text
+    # gets compared (case-insensitive in practice, but stored upper here to
+    # make that visible).
+    manufacturer: str = ""
+    model: str = ""
+    year: str = ""
 
 
 CAR_CATALOG: dict[str, CarInfo] = {
@@ -98,6 +112,9 @@ CAR_CATALOG: dict[str, CarInfo] = {
         sp_to_unlock=39,
         super_wheelspins=1,
         wheelspins=3,
+        manufacturer="LAMBORGHINI",
+        model="REVUELTO",
+        year="2024",
     ),
     "dodge_viper_gts_acr": CarInfo(
         car_id="dodge_viper_gts_acr",
@@ -107,6 +124,9 @@ CAR_CATALOG: dict[str, CarInfo] = {
         super_wheelspins=0,
         wheelspins=0,
         cr_reward=150_000,
+        manufacturer="DODGE",
+        model="VIPER GTS ACR",
+        year="1999",
     ),
 }
 
@@ -144,6 +164,34 @@ class CarConfig:
     # usable "unset" sentinel. This flag is the actual source of truth for
     # whether the farm can be started (see skill_farm_ui._on_start).
     car_collection_configured: bool
+    # Recorded by the Setup Wizard's "Find Automatically" tool: a full
+    # navigation sequence (Backspace to open the Manufacturers list, Down/
+    # Right to the target manufacturer, Enter to jump, then a small local
+    # Down/Up/Left/Right offset within Car Collection to land on the exact
+    # car) — see docs/car-position-autodetect-plan.md and
+    # farm_core/car_collection_finder.py. Each entry is [key, count], the same shape
+    # farm_core.keys.mp() takes as its own (key, count) arguments, so
+    # buy.py can replay the list directly. Only meaningful when
+    # car_collection_auto_found is True below; car_collection_row/col above
+    # remain the manual fallback whenever this hasn't been recorded, or a
+    # later Find Automatically run fails — never both active at once, see
+    # the Settings/Wizard "currently active" display.
+    car_collection_find_sequence: list = dataclasses.field(default_factory=list)
+    # True once Find Automatically has successfully located and recorded
+    # this car's position. Same reasoning as car_collection_configured
+    # above for why this needs its own explicit flag rather than checking
+    # whether car_collection_find_sequence is non-empty: an empty list is
+    # ambiguous (never recorded vs. a genuine zero-press offset), so this
+    # flag is the real source of truth for which navigation method buy.py
+    # replays.
+    car_collection_auto_found: bool = False
+    # User's preference for WHICH method to actually use, independent of whether an auto-found
+    # sequence exists (car_collection_auto_found above) — lets a user keep a successfully-recorded
+    # sequence on file but still choose manual Row/Column instead (Settings tab / Wizard checkbox),
+    # without losing the recorded sequence. Defaults True: once a fresh Find Automatically run
+    # succeeds, using it immediately is the sensible default. Runtime check is always BOTH flags
+    # together — see buy._navigate_car_collection_to_car.
+    car_collection_use_auto_find: bool = True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -159,9 +207,15 @@ class Car:
     super_wheelspins: int
     wheelspins: int
     cr_reward: int
+    manufacturer: str
+    model: str
+    year: str
     car_collection_col: int
     car_collection_row: int
     car_collection_configured: bool
+    car_collection_find_sequence: list
+    car_collection_auto_found: bool
+    car_collection_use_auto_find: bool
 
 
 @dataclasses.dataclass
@@ -180,6 +234,20 @@ class Settings:
     # file, subtract 1 from whatever row/column the UI would show you.
     filter_performance_class_row: int
     filter_car_type_row: int
+    # "Find Automatically" (farm_core.multiplier_filter_finder, Setup Wizard Step 2) — mirrors
+    # CarConfig.car_collection_auto_found's auto-vs-manual fallback semantics, but lives at the top
+    # level rather than per-car, since the multiplier car filter isn't tied to which farm car is
+    # selected. filter_performance_class/filter_car_type record WHAT was searched for (shown back
+    # in the wizard, and reused if the user re-runs Find Automatically later); filter_find_sequence
+    # is the recorded [key, count] navigation replayed by remove.py instead of the manual row counts
+    # above when filter_auto_found is True — see remove._replay_filter_find_sequence.
+    filter_performance_class: str
+    filter_car_type: str
+    filter_auto_found: bool
+    filter_find_sequence: list
+    # Same "use this even though it exists" preference toggle as
+    # CarConfig.car_collection_use_auto_find above, for this filter's own auto-found sequence.
+    filter_use_auto_find: bool
     # Position of the multiplier car within the filtered "My Cars" grid
     # (3 rows per column, dynamic columns) — user-specific. Also stored
     # 0-based / shown 1-based in the UI, same as the fields above.
@@ -225,9 +293,15 @@ class Settings:
             super_wheelspins=info.super_wheelspins,
             wheelspins=info.wheelspins,
             cr_reward=info.cr_reward,
+            manufacturer=info.manufacturer,
+            model=info.model,
+            year=info.year,
             car_collection_col=user.car_collection_col,
             car_collection_row=user.car_collection_row,
             car_collection_configured=user.car_collection_configured,
+            car_collection_find_sequence=user.car_collection_find_sequence,
+            car_collection_auto_found=user.car_collection_auto_found,
+            car_collection_use_auto_find=user.car_collection_use_auto_find,
         )
 
 
@@ -246,6 +320,11 @@ def _default_settings() -> Settings:
         cars=cars,
         filter_performance_class_row=0,  # TODO: set per account (Settings tab)
         filter_car_type_row=0,
+        filter_performance_class="",
+        filter_car_type="",
+        filter_auto_found=False,
+        filter_find_sequence=[],
+        filter_use_auto_find=True,
         multiplier_car_col=0,
         multiplier_car_row=0,
         multiplier_car_configured=False,
@@ -284,6 +363,11 @@ def load(path: pathlib.Path = SETTINGS_PATH) -> Settings:
         "selected_car",
         "filter_performance_class_row",
         "filter_car_type_row",
+        "filter_performance_class",
+        "filter_car_type",
+        "filter_auto_found",
+        "filter_find_sequence",
+        "filter_use_auto_find",
         "multiplier_car_col",
         "multiplier_car_row",
         "multiplier_car_configured",

@@ -79,7 +79,9 @@ START_FROM_INFO: dict[str, tuple[str, str]] = {
     "buy": (
         "Buy",
         "Go to the Festival site menu. In the Campaign tab, click Collection "
-        "Journal → Master Explorer → Car Collection.\n\n"
+        'Journal → the right-hand card ("Discover Japan" — labeled with your '
+        'current rank, e.g. "Visitor", "Master Explorer", etc.; the rank name '
+        "changes as you progress, the card itself doesn't) → Car Collection.\n\n"
         "Once inside the Car Collection, navigate exactly to the "
         "car the farm should buy (e.g. Lamborghini Revuelto), then click "
         "Start.",
@@ -125,6 +127,29 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "Row 1 = the top of the list; Column 1–5, left to right. This "
         "depends entirely on which cars your account has access to, so it "
         "has to be set per account.\n\n"
+        "You don't have to count this yourself: the Setup Wizard's Step 1 has "
+        'a "Find Automatically" button that searches Car Collection for the '
+        "car by name and records the navigation itself — open Car Collection "
+        "in-game first, click the button, and switch back to FH6 during the "
+        "5-second countdown. While it searches, a small status HUD appears "
+        "over the FH6 window itself so you can follow along without "
+        'switching back to this dialog. Once it succeeds, a "Use '
+        'Auto-Found Position" checkbox appears (here and in the Wizard) — '
+        "ticked by default, it uses the recorded result and grays out the "
+        "Row/Column fields below; untick it to go back to manual entry "
+        "without losing the recorded result (toggling the checkbox never "
+        "discards it, so re-ticking later doesn't require running the "
+        "search again). The manual Row/Column fields below are the fallback "
+        "for whenever Find Automatically hasn't been run yet, or fails.\n\n"
+        'IMPORTANT: clicking "Find Automatically" again — even just to '
+        "double-check an already-working result — clears the previously "
+        "recorded position the moment the new search commits to running, "
+        "before it's found anything. If that new attempt then fails (a bad "
+        "screenshot, losing focus, scrolling too far), the old working "
+        "result is already gone, not restored — you're left on manual entry "
+        "until a search succeeds again. Only re-run it when you actually "
+        "suspect it's gone stale (e.g. your garage changed), not just to "
+        "confirm it still works.\n\n"
         "Required before starting the farm, unless Challenge Only is ticked "
         "on the Farm tab — that mode never buys/unlocks/removes cars, so "
         "this position is never used.",
@@ -192,6 +217,27 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "Both boxes get checked to narrow My Cars down to just your "
         "multiplier car before finding its position — see the Position "
         "section below.\n\n"
+        "You don't have to count either row yourself: the Setup Wizard's "
+        'Step 2 has a "Find Automatically" button — pick your Performance '
+        "Class from the dropdown and/or type your Car Type, open My Cars "
+        "in-game first, click the button, and switch back to FH6 during the "
+        "5-second countdown. While it searches, a small status HUD appears "
+        "over the FH6 window itself so you can follow along without "
+        'switching back to this dialog. Once it succeeds, a "Use '
+        'Auto-Found Filter" checkbox appears (here and in the Wizard) — '
+        "ticked by default, it uses the recorded result and grays out the "
+        "Filter Row fields below; untick it to go back to manual entry "
+        "without losing the recorded result (toggling the checkbox never "
+        "discards it). The manual Filter Row fields below are the fallback "
+        "for whenever Find Automatically hasn't been run yet, or fails.\n\n"
+        'IMPORTANT: clicking "Find Automatically" again — even just to '
+        "double-check an already-working result — clears the previously "
+        "recorded filter the moment the new search commits to running, "
+        "before it's found anything. If that new attempt then fails, the "
+        "old working result is already gone, not restored — you're left on "
+        "manual entry until a search succeeds again. Only re-run it when "
+        "you actually suspect it's gone stale, not just to confirm it still "
+        "works.\n\n"
         "IMPORTANT: any change to your garage through normal play between "
         "farm sessions — getting, buying, removing, or selling a car, a "
         "wheelspin reward, anything outside the farm itself — can shift "
@@ -234,7 +280,12 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "switches to the multiplier car FIRST, before removing that "
         "cycle's freshly-bought cars, so they can still shift this "
         "position if they share the multiplier car's Performance Class "
-        "and Car Type (see the Filter section above).",
+        "and Car Type (see the Filter section above).\n\n"
+        "Unlike Car Collection and the Filter rows above, there's no Find "
+        "Automatically for this one — matching a specific car by name in a "
+        "grid where several cars can share it (and where the name may "
+        "scroll/truncate on the card) turned out not to be worth automating. "
+        "This position is manual-entry only.",
     ),
 }
 

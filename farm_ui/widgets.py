@@ -76,6 +76,58 @@ class _LogBridge(QObject):
 _log_bridge = _LogBridge()
 
 
+class _FindCarCollectionBridge(QObject):
+    """Thread-safe bridge for the Setup Wizard's "Find Automatically" button
+    (farm_ui/wizard.py, Car Collection step) — farm_core.car_collection_finder
+    .find_car() runs on a background threading.Thread (the same pattern
+    farm_tab.py's farm run uses, not QThread), and these Signals marshal its
+    progress/status/result back onto the Qt thread automatically via Qt's
+    queued-connection mechanism (same as _LogBridge above) — no manual
+    invokeMethod needed. Kept separate from _log_bridge since this is a
+    distinct concern (one wizard dialog's search), not part of the main farm
+    run's log stream. Named specifically for Car Collection (not just
+    "find car") since a second, similarly-shaped search for the 9x
+    multiplier car's filter rows is a likely future addition — see
+    docs/car-position-autodetect-plan.md — and would get its own bridge
+    rather than sharing this one, to keep each search's own progress/done
+    signals from ever crossing wires. `progress` carries find_car()'s
+    verbose `log` lines (shown in the wizard dialog's own status label);
+    `status` carries its curated `on_status` phase text, driving
+    farm_ui.finder_overlay's on-screen HUD instead — same split as
+    _FindMultiplierFilterBridge below.
+    """
+
+    progress = Signal(str)  # one verbose diagnostic line as the search runs
+    status = Signal(str)  # one curated high-level phase message, for the overlay
+    done = Signal(bool, str, list)  # (success, message, recorded [key, count] sequence)
+
+
+_find_car_collection_bridge = _FindCarCollectionBridge()
+
+
+class _FindMultiplierFilterBridge(QObject):
+    """Thread-safe bridge for the Setup Wizard's "Find Automatically" button
+    (farm_ui/wizard.py, 9x Multiplier Car Filter step) — the second,
+    similarly-shaped search _FindCarCollectionBridge's docstring anticipated.
+    farm_core.multiplier_filter_finder.find_multiplier_filter() runs on a
+    background threading.Thread, same pattern as _find_car_collection_bridge.
+
+    Two separate signals carry the module's two deliberately different
+    message channels (see find_multiplier_filter()'s docstring): `progress`
+    is the verbose diagnostic log (shown in the wizard dialog's own status
+    label, same as Car Collection's), `status` is the curated, high-level
+    phase text (see find_multiplier_filter()'s on_status=) meant for the
+    on-screen overlay shown over the FH6 window itself while the search runs.
+    """
+
+    progress = Signal(str)  # one verbose diagnostic line as the search runs
+    status = Signal(str)  # one curated high-level phase message, for the overlay
+    done = Signal(bool, str, list)  # (success, message, recorded [key, count] sequence)
+
+
+_find_multiplier_filter_bridge = _FindMultiplierFilterBridge()
+
+
 class _StdoutCapture:
     def write(self, text: str) -> None:
         text = text.strip()

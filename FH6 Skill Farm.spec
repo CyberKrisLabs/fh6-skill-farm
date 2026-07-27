@@ -2,6 +2,8 @@
 
 import os, site
 
+from PyInstaller.utils.hooks import collect_submodules
+
 def _find_winrt_dll():
     # Search all site-packages directories (handles both venv and global installs)
     for sp in site.getsitepackages():
@@ -17,6 +19,19 @@ def _find_winrt_dll():
 _winrt_dll = _find_winrt_dll()
 _binaries = [(_winrt_dll, ".")] if _winrt_dll else []
 
+# winrt's own imports are inside try/except so PyInstaller's static analysis can't see them at
+# all. Hand-listing dotted names for the pure-Python winrt.windows.* subpackages used to work
+# for most of them, but proved unreliable: winrt.windows.foundation.collections was correctly
+# REQUESTED (present in the Analysis) but silently never actually bundled into the PYZ archive —
+# field-confirmed via a packaged .exe's console output ("ModuleNotFoundError: no module named
+# winrt.windows.foundation.collections") despite the name being spelled correctly and its files
+# genuinely existing on disk. Its leaf name collides with Python's own stdlib `collections`
+# module, which is the likely culprit for whatever resolution shortcut silently dropped it.
+# collect_submodules() walks the REAL package directory tree on disk instead of relying on a
+# hand-typed name list, so it can't silently miss a submodule (present or future) the way a
+# manual list just did.
+_winrt_windows_submodules = collect_submodules("winrt.windows")
+
 a = Analysis(
     ["skill_farm_ui.py"],
     pathex=[],
@@ -25,9 +40,12 @@ a = Analysis(
         ("assets", "assets"),
     ],
     hiddenimports=[
-        # winrt OCR — imports are inside try/except so PyInstaller can't see them
+        # Native (.pyd) extension modules — not pure-Python packages, so
+        # collect_submodules() above can't discover these; each corresponds to a real
+        # .pyd confirmed installed under site-packages/winrt/.
         "winrt._winrt",
         "winrt._winrt_windows_foundation",
+        "winrt._winrt_windows_foundation_collections",
         "winrt._winrt_windows_graphics_imaging",
         "winrt._winrt_windows_media_ocr",
         "winrt._winrt_windows_storage_streams",
@@ -36,11 +54,8 @@ a = Analysis(
         "winrt.runtime.interop",
         "winrt.system",
         "winrt.system.hresult",
-        "winrt.windows.foundation",
-        "winrt.windows.graphics.imaging",
-        "winrt.windows.media.ocr",
-        "winrt.windows.storage.streams",
-    ],
+    ]
+    + _winrt_windows_submodules,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

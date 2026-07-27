@@ -7,6 +7,11 @@ QWidget {
     font-family: "Segoe UI", Arial, sans-serif;
     font-size: 13px;
 }
+/* Disabled state, generic fallback — every widget below that sets its own explicit `color`
+   needs its OWN :disabled variant too (a stylesheet color rule always wins over Qt's normal
+   automatic disabled-palette dimming, for that exact selector), but this catches anything
+   plain (e.g. a bare QLabel with no [class=...] tag) that doesn't have a more specific rule. */
+QWidget:disabled { color: #4A4A5A; }
 QGroupBox {
     border: 1px solid #2A2A3A;
     border-radius: 5px;
@@ -41,6 +46,7 @@ QLabel[class="small-label"] {
     font-size: 11px;
     color: #777788;
 }
+QLabel[class="small-label"]:disabled { color: #45454F; }
 QLabel[class="status-label"] {
     font-size: 11px;
     color: #AAAACC;
@@ -96,6 +102,7 @@ QSpinBox {
     border-radius: 4px;
     padding: 3px 6px;
 }
+QSpinBox:disabled { background-color: #16161D; color: #4A4A5A; border-color: #24242E; }
 QSpinBox::up-button, QSpinBox::down-button { background-color: #2A2A3A; border: none; width: 16px; }
 QLineEdit {
     background-color: #1C1C28;
@@ -104,6 +111,7 @@ QLineEdit {
     border-radius: 4px;
     padding: 3px 6px;
 }
+QLineEdit:disabled { background-color: #16161D; color: #4A4A5A; border-color: #24242E; }
 QComboBox {
     background-color: #1C1C28;
     color: #E0E0E8;
@@ -111,6 +119,7 @@ QComboBox {
     border-radius: 4px;
     padding: 3px 6px;
 }
+QComboBox:disabled { background-color: #16161D; color: #4A4A5A; border-color: #24242E; }
 QComboBox QAbstractItemView {
     background-color: #1C1C28;
     color: #E0E0E8;
@@ -129,6 +138,7 @@ QTabBar::tab {
 QTabBar::tab:selected { color: #FF6B1A; background: #12121A; }
 QTabBar::tab:hover { color: #E0E0F0; }
 QCheckBox { spacing: 7px; color: #C0C0D0; }
+QCheckBox:disabled { color: #4A4A5A; }
 QCheckBox::indicator {
     width: 14px; height: 14px;
     border: 1px solid #3A3A4E;
@@ -137,6 +147,8 @@ QCheckBox::indicator {
 }
 QCheckBox::indicator:checked { background-color: #FF6B1A; border-color: #FF6B1A; }
 QCheckBox::indicator:hover { border-color: #FF6B1A; }
+QCheckBox::indicator:disabled { background-color: #16161D; border-color: #24242E; }
+QCheckBox::indicator:checked:disabled { background-color: #5A2A10; border-color: #5A2A10; }
 QRadioButton { spacing: 7px; color: #C0C0D0; }
 QRadioButton::indicator {
     width: 14px; height: 14px;

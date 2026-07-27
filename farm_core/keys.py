@@ -115,6 +115,23 @@ def mp(key, count=1, wait=None):
         _sleep(wait)
 
 
+def _prevent_idle() -> None:
+    """Nudge the mouse by a pixel and back — enough to reset an idle timer
+    without triggering any real game action. For the long (10-20s+) blind
+    poll loops that only screenshot/OCR and never press a key — e.g.
+    farm_core.unlock._wait_for_car_loaded's wait for a non-preloaded car's
+    showcase screen to render. Field-reported (2026-07-27, laptop): an idle
+    screensaver engaged ~14s into exactly this kind of poll-only wait.
+    Deliberately a mouse move, not a key press: FH6's own button-hint bar on
+    the car showcase screen maps Space to Drive, so a keep-alive that
+    presses ANY key risks firing that action on a screen that's actually
+    fine and just hasn't been OCR-recognized yet — a 1px mouse move has no
+    menu-navigation meaning in this keyboard-driven game.
+    """
+    pyautogui.moveRel(1, 0)
+    pyautogui.moveRel(-1, 0)
+
+
 def _run_key_sequence(seq) -> None:
     """Run a sequence of (key, press_count) via mp(), or ("wait", seconds) to pause.
 

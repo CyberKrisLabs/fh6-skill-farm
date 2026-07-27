@@ -56,20 +56,124 @@ farm_core/              Core automation
                            economics, wait constants, BUFFER_ENABLED, LOGS_DIR
   keys.py                  mp()/_press_key() input primitives, stop event, watchdog
   vision.py                OCR screen-detection helpers + keyword sets
+  car_collection_finder.py find_car(target, log) — automated Car Collection position
+                           finder behind the Setup Wizard's "Find Automatically" button
+                           (farm_ui/wizard.py) and the standalone tools/car_collection_finder.py
+                           CLI. Promoted out of a tools/ prototype once proven out — see
+                           docs/car-position-autodetect-plan.md for the full design/
+                           field-testing history. Opens the Manufacturers list, burst-
+                           scans + OCRs to jump to the target's manufacturer, then
+                           burst-scans Car Collection for the exact car — all via full-
+                           window OCR word positions reconstructed into a row/column
+                           grid (build_grid()), not fixed-% crops, plus a color-based
+                           (not OCR) selection-highlight detector (find_highlight_box())
+                           to locate the cursor. Returns a FindResult (success, message,
+                           recorded [key, count] sequence) instead of raising — `log`
+                           defaults to print() for the CLI, the Wizard passes a Qt-signal
+                           emitter instead so this module never touches Qt directly.
+                           compress_sequence() (shared with multiplier_filter_finder.py)
+                           collapses the raw recorded path's burst-scan exploration
+                           (overshoot-then-correct, e.g. down 8 ×4 then up 6) into its net
+                           per-axis delta before the sequence is returned/saved — replay
+                           (buy.py/remove.py) only ever needs the destination, not the
+                           search's own exploration steps, so this makes every future
+                           replay faster without touching how the search itself works.
+                           _read_grid_retrying_empty() (shared with multiplier_filter_finder
+                           .py's own _find_car_type_row) retries a burst-scan read IN PLACE
+                           (no keys pressed) up to EMPTY_READ_RETRIES times if the read comes
+                           back too thin (below a per-viewport min_rows floor) — field-caught:
+                           a screenshot taken mid-scroll-animation can catch the screen's own
+                           static header text while the actual list is still blank, and
+                           without this the OLD code just pressed another burst on top of a
+                           read that never really happened, silently doubling the distance
+                           moved and skipping straight past the target. Both burst loops
+                           (_find_manufacturer/_find_car_in_collection) also compare each
+                           read's text against the PREVIOUS read and abort immediately if two
+                           non-empty reads in a row are identical — genuinely reached the
+                           bottom of the list, not just a bad frame — instead of burning
+                           through the full burst-count ceiling or needing a manual Stop.
+  multiplier_filter_finder.py find_multiplier_filter(performance_class, car_type, log,
+                           on_status) — automated 9x Multiplier Car Filter finder behind
+                           the Setup Wizard Step 2's "Find Automatically" button
+                           (farm_ui/wizard.py) and the standalone
+                           tools/multiplier_filter_finder.py CLI. Same OCR/burst-scan
+                           foundation as car_collection_finder.py (reuses its
+                           ocr_with_boxes()) but a different screen with two genuinely
+                           different sub-problems: Performance Class (D/C/B/A/S1/S2/R/X)
+                           can't be OCR'd at all — WinRT treats an isolated
+                           single/double-char string as noise — so it's found via
+                           multi-scale cv2.matchTemplate() against
+                           assets/perf_class_templates/*.png instead; Car Type (e.g. "GT
+                           Cars") is normal OCR-readable text, found the same
+                           burst-scan-and-match way car_collection_finder.py finds
+                           Manufacturers. Has its own cursor detector, _find_cursor_box()
+                           — this screen's real per-row cursor is a thin lime-green
+                           BORDER around an otherwise black row, not the solid-filled
+                           highlight car_collection_finder.find_highlight_box() looks for
+                           (that same hue is confusingly ALSO used by this screen's own
+                           "Filter" title and section headers, which really are solid
+                           fills — distinguished by fill-ratio, not just area/width).
+                           Returns a FindResult, same shape/reasoning as
+                           car_collection_finder.FindResult. `on_status` is a second,
+                           deliberately separate callback from `log`: `log` carries every
+                           verbose diagnostic line, `on_status` carries only curated
+                           high-level phase text ("Scanning for Performance Class
+                           'R'...") for farm_ui.finder_overlay's on-screen HUD — the
+                           Wizard wires both to Qt signals, the CLI only uses `log`.
   challenge.py             Phase: Challenge (share-code search, drive, end-screen detect)
-  buy.py                   Phase: Buy
+  buy.py                   Phase: Buy — _navigate_car_collection_to_car() has two
+                           mutually exclusive methods depending on
+                           CarConfig.car_collection_auto_found: replay the recorded
+                           car_collection_finder.py sequence, or the original manual row-then-
+                           column press count (the fallback, and the only method before
+                           Find Automatically existed)
   unlock.py                Phase: Unlock (+ transition_to_unlock)
-  remove.py                Phase: Remove
+  remove.py                Phase: Remove — _switch_to_multiplier_car() has the same
+                           two-method split as buy.py above, keyed off
+                           Settings.filter_auto_found: replay the recorded
+                           multiplier_filter_finder.py sequence
+                           (_replay_filter_find_sequence), or the original manual
+                           Performance-Class-row/Car-Type-row press counts (the
+                           fallback, and the only method before Find Automatically
+                           existed for this screen)
   orchestrator.py          run_phase/run_farm/_run_farm_inner — ties phases into cycles
   cli.py                   argparse entry point
 
 farm_ui/                PySide6 GUI
   theme.py                 Stylesheet
-  widgets.py                Small reusable widgets, log bridge, generic builders
+  widgets.py                Small reusable widgets, log bridge, generic builders.
+                             `_find_car_collection_bridge` — a second, separate QObject Signal
+                             bridge (same cross-thread pattern as `_log_bridge`) for
+                             wizard.py's "Find Automatically" — kept separate since a
+                             wizard search isn't part of the main farm run's log stream.
+                             `_find_multiplier_filter_bridge` — the analogous bridge for
+                             Step 2's "Find Automatically", with an extra `status` Signal
+                             alongside `progress`/`done`: `progress` carries
+                             multiplier_filter_finder.find_multiplier_filter()'s verbose
+                             `log` lines (shown in the wizard dialog's own status label,
+                             same as Car Collection's), `status` carries its curated
+                             `on_status` phase text, which drives finder_overlay.py's
+                             on-screen HUD instead.
   farm_tab.py               Farm tab mixin — Start From / Options / Summary / Start-Stop / Log
   settings_tab.py            Settings tab mixin — farm car, Car Collection position,
                              share code, 9x multiplier car filter + position, Skip
-                             Remove in Cycle, in-game overlay toggle. Every field
+                             Remove in Cycle, in-game overlay toggle. Both the Car
+                             Collection and Multiplier Filter sections have a "Use
+                             Auto-Found Position"/"Use Auto-Found Filter" checkbox
+                             (same wording/behavior as wizard.py's own, kept in sync
+                             so the two can't drift) — only enabled once
+                             CarConfig.car_collection_auto_found / Settings.filter_auto_found
+                             is true for whichever car/filter is selected; ticking it
+                             disables the manual Row/Column (or Filter Row) fields
+                             below and switches farm_core.buy/remove over to
+                             replaying the recorded sequence, unticking re-enables
+                             them and reverts to the manual fields — the recorded
+                             sequence itself is never discarded either way (see
+                             `car_collection_use_auto_find`/`filter_use_auto_find`).
+                             A `_set_cc_mode_label`/`_set_filter_mode_label` under
+                             each checkbox always states in plain text which one is
+                             actually in effect (`_refresh_cc_mode_display`/
+                             `_refresh_filter_mode_display`). Every field
                              auto-saves (debounced 400ms) — no Save button. A
                              `_loading_settings` guard flag stops the initial
                              programmatic field-load (on tab build) from being
@@ -95,6 +199,18 @@ farm_ui/                PySide6 GUI
   overlay.py                 IngameOverlay — optional always-on-top HUD shown over the FH6
                              window (Start/Stop, phase/cycle progress, last log line);
                              lifecycle owned by FarmTabMixin, off by default (Settings tab)
+  finder_overlay.py           FinderStatusOverlay — a much simpler always-on-top HUD than
+                             IngameOverlay above: one status label, no controls, no
+                             focus-based auto-hide (tied to a short automated search the
+                             user is actively watching, not a long farm-run session).
+                             Positioned ~10% down from the FH6 window's top edge,
+                             horizontally centered. `update_status(text)` is its only
+                             public method. Lifecycle (create on search start, close ~2s
+                             after done/failed so the final message is actually readable)
+                             is owned by wizard.py — one shared `self._search_overlay`
+                             instance reused by both Step 1's and Step 2's "Find
+                             Automatically" (only one search is ever in flight at a
+                             time), not by this class itself.
   wizard.py                  SetupWizardDialog — 3-step guided setup for Car Collection
                              Row/Column, then 9x Multiplier Car Filter + Position (the
                              fields gating farm_tab._on_start's "Setup required" check).
@@ -108,7 +224,71 @@ farm_ui/                PySide6 GUI
                              already-confirmed step. Opened from a "Setup Wizard" button
                              atop the Settings tab (`SettingsTabMixin._open_setup_wizard`)
                              and from an "Open Wizard" button on farm_tab.py's
-                             "Setup required" warning dialog.
+                             "Setup required" warning dialog. `_build_step_page()`
+                             deliberately renders a step's `extra_widget` (the "Find
+                             Automatically" section) BEFORE its manual fields — Find
+                             Automatically is the primary path, manual entry the
+                             fallback, and the layout order says so.
+
+                             Both Step 1 and Step 2 have a "Find Automatically"
+                             button, same shape: confirm dialog → 5s QTimer countdown
+                             (same pattern as farm_tab.py's start countdown) → a
+                             background threading.Thread runs the matching farm_core
+                             finder, emitting progress through its own widgets bridge
+                             (queued onto the Qt thread automatically, same as
+                             `_log_bridge`) — on success writes the recorded sequence,
+                             sets its auto-found flag, and checks that step's "Use
+                             Auto-Found Position"/"Use Auto-Found Filter" checkbox
+                             (`_cc_use_auto_chk`/`_filter_use_auto_chk`); on failure
+                             leaves the manual fields as the fallback.
+                             `_clear_cc_auto_find`/`_clear_filter_auto_find` clear the
+                             PREVIOUSLY recorded auto-found flag/sequence to
+                             False/`[]` the moment a search actually commits to running
+                             (countdown + focus check passed, about to press keys) —
+                             not on button-click, so an attempt aborted before it even
+                             starts (FH6 not focused) doesn't disturb a working result.
+                             Field-requested (2026-07-27) so a re-run that FAILS can't
+                             leave stale-but-still-"active"-looking data behind — but
+                             the flip side is real and undocumented nowhere else: a
+                             re-run that fails does NOT restore the previous good
+                             result, it's simply gone until the next success. Re-running
+                             "just to double-check" an already-working result is a real
+                             way to lose it. That checkbox
+                             — only enabled once a sequence actually exists — lets the
+                             user switch back to the manual fields (which re-enable)
+                             WITHOUT discarding the recorded sequence, so re-ticking it
+                             later doesn't require re-running the search; a
+                             `_cc_mode_label`/`_filter_mode_label` underneath always
+                             states in plain text which one is actually in effect
+                             (`_refresh_cc_mode_display`/`_refresh_filter_mode_display`
+                             — same checkbox/labels/wording the Settings tab shows, kept
+                             in sync so the two can't drift). Step 1:
+                             farm_core.car_collection_finder.find_car() →
+                             `_find_car_collection_bridge` →
+                             CarConfig.car_collection_find_sequence/car_collection_auto_found/
+                             car_collection_use_auto_find. Step 2: a Performance Class
+                             combo (closed set, multiplier_filter_finder.PERFORMANCE_CLASSES)
+                             + an editable Car Type combo (pre-filled from
+                             multiplier_filter_finder.KNOWN_CAR_TYPES — observed values
+                             from one account, NOT a confirmed-exhaustive list, hence
+                             editable) feed farm_core.multiplier_filter_finder.
+                             find_multiplier_filter() → `_find_multiplier_filter_bridge` →
+                             Settings.filter_find_sequence/filter_auto_found/
+                             filter_use_auto_find/filter_performance_class/filter_car_type.
+
+                             Both steps' searches open ONE shared
+                             finder_overlay.FinderStatusOverlay (`self._search_overlay`),
+                             updated from each bridge's `status` Signal (the curated
+                             `on_status` channel — see multiplier_filter_finder.py's
+                             entry above for why that's separate from `progress`), closed
+                             ~2s after the search finishes or immediately if the dialog
+                             itself closes first. Both steps share one `self._searching`
+                             flag (only one search is ever reachable at a time — nav
+                             buttons, the only way to reach the other step, are disabled
+                             for its whole duration) that blocks Cancel/Back/window-close
+                             (`closeEvent`) while a search is in flight, so the dialog
+                             can't be destroyed out from under a still-running background
+                             thread.
   wizard_content.py          WIZARD_STEPS: per-step title/fallback_text/slides for
                              wizard.py — its own copy, deliberately NOT
                              guide_content.SETTINGS_INFO (that's reference text for
@@ -176,6 +356,109 @@ pytest --cov --cov-report=term-missing
 
 ## Known Behaviors (don't "fix" these back)
 
+- **`vision._read_car_screen_buttons()` OCRs the button bar in 4 overlapping
+  horizontal slices (2026-07-27), not one pass over the full window width.**
+  Field-confirmed via debug screenshots: WinRT OCR silently drops whole
+  button-hint clusters (a boxed key + its label, e.g. "X Explode") when too
+  many of them sit on one line — even when a narrower crop leaves the text
+  fully legible, sharp, un-dimmed (ruling out image quality/resolution as
+  the cause). A 2-way split wasn't narrow enough on its own (still dropped
+  "X Explode" / "Y Photo Mode" / "BACKSTEG Hide UI" from the car showcase
+  screen's button bar, confirmed present and legible in the debug
+  screenshot of that exact half); 4 slices (`_BUTTON_BAR_SLICE_COUNT`,
+  `_button_bar_slices()`) was enough. This is a cousin of the
+  already-documented "isolated single/double-char string treated as noise"
+  WinRT limitation (multiplier_filter_finder.py's Performance Class
+  letters, described in its own architecture entry below) — just for rows
+  of several small badge+label pairs rather than one isolated string.
+  `_BUTTON_BAR_SLICE_COUNT` is deliberately a tunable module constant, not
+  a derived value — if a future screen's button bar still drops text with
+  4 slices, raise it rather than re-deriving from scratch. This function is
+  shared by every screen that could show the car showcase view
+  (buy/remove/unlock's CAR_SHOWCASE_KEYWORDS/CAR_LOADED_MENU_KEYWORDS
+  checks, challenge.py's WHATS_NEXT_KEYWORDS check), so the fix applies
+  everywhere at once without needing to touch those call sites.
+- **`keys._prevent_idle()` (a harmless 1px mouse jiggle) runs every ~1s
+  during `unlock._wait_for_car_loaded`'s and
+  `remove._wait_for_multiplier_car_loaded`'s polling loops ONLY
+  (2026-07-27) — nowhere else in the codebase.** Field-reported: selecting
+  a car from the car list and waiting on its showcase-vs-loaded-menu
+  detection is the one spot an idle/screensaver state has actually been
+  observed engaging (~14s into a poll-only wait with zero real input) on a
+  laptop. Deliberately a mouse move, not a key press: the real showcase
+  screen maps Space to Drive, so a keep-alive that presses ANY key risks
+  firing a real game action on a screen that's actually fine and just
+  hasn't been OCR-recognized yet. This was initially over-applied to
+  buy.py's and challenge.py's own long polling loops too, on the untested
+  assumption they shared the same risk — reverted after the user clarified
+  the screensaver has only ever actually been observed on the car-list
+  "Get in Car" flow specifically. Don't re-spread this to other polling
+  loops without checking first; a wrong guess here isn't cost-free (see its
+  docstring for why a key-press-based keep-alive specifically would be
+  worse than doing nothing).
+- **`orchestrator._run_farm_inner`'s cycle loop treats "CR insufficient for
+  even one car" as a special case on cycle 1 too (2026-07-27), not just from
+  cycle 2 onward.** Only the `else: # challenge` branch of the initial
+  buy_count/unlock_count computation derives its count from `cr` (a
+  Buy/Unlock/Remove start's counts come from `skill_points`/`cars` instead,
+  never from `cr`, at least for cycle 1) — so this new branch is gated on
+  `start == "challenge"` specifically. Before this fix, cycle 1 always ran
+  the full `phases_to_run` set regardless, meaning a `cr` too low to afford
+  even one car (field-confirmed with `cr=500`, far below any real car's
+  price) still drove real in-game Buy → Unlock transitions for phases that
+  would do nothing (0 cars either way) — wasted actions, not just a wasted
+  log line. Cycle 2+ already had the equivalent protection
+  (`elif remaining_cr is not None and remaining_cr < config.CAR_PRICE_CR`);
+  this closes the one gap where it didn't apply from the very first cycle.
+  Sets `is_final=True` same as that later-cycle branch, since nothing in
+  this loop ever increases CR — once insufficient, always insufficient, so
+  there's no point looping again after the one challenge-only cycle.
+- **`farm_ui.farm_tab._simulate_subsequent_cycles`'s `first_subsequent_ci`
+  parameter is used as the FALLBACK top-up estimate too (2026-07-27), not
+  only when its own `while` loop actually iterates.** This helper computes
+  the correct, SP-aware challenge count for the very first post-Buy/Unlock/
+  Remove challenge phase (`first_subsequent_ci`, derived from the user's
+  entered `skill_points`) — but before this fix, that value was ONLY ever
+  consumed inside the `while remaining >= config.CAR_PRICE_CR:` loop's first
+  iteration. When the current cycle's own buy leaves too little CR for even
+  one more car (loop never iterates — e.g. buying 1 car for ~347k of a
+  500k budget), the value was silently discarded, and `final_top_up` fell
+  back to `config.challenges_to_refill(initial_last_unlock)` instead — a
+  formula that assumes SP was ALREADY at the 999 cap going into the last
+  unlock, true from cycle 2 onward but not for a session's first
+  challenge-after-buy phase, which has to climb from the user's actual
+  entered `skill_points`. Field-confirmed: cars=1, skill_points=560,
+  cr=500,000 showed "~5 min total" in the pre-run estimate while the real
+  run needed ~48 challenges (~20-40 min) to refill SP — the correct 48-value
+  was computed (`first_challenges`/`base_c` in `_update_summary`) but thrown
+  away by this exact path. Fixed by using `first_subsequent_ci` directly as
+  `final_top_up` whenever the loop's first iteration never ran, instead of
+  falling through to the cycle-2+ formula. Affects both `_time_buy()` and
+  `_time_unlock_remove()`, which share this one helper — fixing it here
+  covers both callers at once.
+- **`farm_ui.finder_overlay.FinderStatusOverlay` excludes itself from
+  screenshot capture (2026-07-27), via `SetWindowDisplayAffinity(...,
+  WDA_EXCLUDEFROMCAPTURE)`.** Field-caught: the overlay sits on top of the
+  FH6 window to show search progress, but `farm_core.car_collection_finder`
+  / `multiplier_filter_finder` read that SAME region via
+  `pyautogui.screenshot()` to OCR it — a plain region screenshot captures
+  whatever's visually on screen, including other windows drawn on top. The
+  overlay's own status text ("Searching for manufacturer 'LAMBORGHINI'...")
+  was getting OCR'd right alongside the real Manufacturers list, corrupting
+  `build_grid()`'s row clustering and landing the search on a completely
+  unrelated manufacturer ("Wuling") — reproduced by diffing a
+  Wizard-triggered run's OCR dump against the CLI tool's clean one (the CLI
+  never creates this overlay, so it was never affected). `WDA_EXCLUDEFROMCAPTURE`
+  keeps the overlay visible to the user on the real display while making it
+  invisible to any screenshot API — no hide-before-screenshot/show-after
+  timing needed, which would otherwise require synchronizing the Qt-owned
+  overlay with the finder's background search thread. Requires Windows 10
+  2004+; silently falls back to the pre-fix (screenshot-visible) behavior on
+  older Windows rather than raising. If a similar always-on-top overlay is
+  ever added elsewhere in this codebase, check whether it can end up on top
+  of a region something OCRs — `overlay.IngameOverlay` is safe today only
+  because nothing currently OCRs the exact area it occupies, not because of
+  any structural protection.
 - **Removed (2026-07-25): stuck-start detection.** The farmed challenge was
   switched to a new share code (Festival Drag Strip) that has never shown the
   wrong-direction-restart bug the old challenge had — so the whole apparatus

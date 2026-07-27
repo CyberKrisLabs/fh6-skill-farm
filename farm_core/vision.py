@@ -296,8 +296,47 @@ def _detect_challenge_found_screen() -> bool:
     return any(kw in text for kw in CHALLENGE_FOUND_KEYWORDS)
 
 
+_BUTTON_BAR_SLICE_COUNT = 4  # see _read_car_screen_buttons' docstring — 2 wasn't narrow enough
+_BUTTON_BAR_SLICE_OVERLAP_FRAC = 0.08
+
+
+def _button_bar_slices(wx: int, ww: int) -> list:
+    """N evenly-sized, overlapping horizontal slices covering [wx, wx+ww).
+    Returns [(left, width), ...] in absolute x coordinates. Overlap (as a
+    fraction of the total width) keeps a button-hint group straddling a
+    slice boundary from being cut in half."""
+    n = _BUTTON_BAR_SLICE_COUNT
+    nominal = ww / n
+    overlap = ww * _BUTTON_BAR_SLICE_OVERLAP_FRAC
+    slices = []
+    for i in range(n):
+        left = max(0.0, i * nominal - overlap)
+        right = min(float(ww), (i + 1) * nominal + overlap)
+        slices.append((wx + int(left), int(right - left)))
+    return slices
+
+
 def _read_car_screen_buttons() -> str:
-    """OCR the bottom 20% of the window (button bar). Returns uppercase text ("" on error/no window)."""
+    """OCR the bottom 20% of the window (button bar), split into several
+    overlapping horizontal slices and OCR'd separately rather than one pass
+    over the whole crop.
+
+    Field-confirmed (2026-07-27, via debug screenshots) this isn't a
+    crop-width or image-quality problem — a crop of just the left half of
+    this bar showed X Explode / Y Photo Mode / BACKSTEG Hide UI fully
+    legible, sharp, un-dimmed, yet OCR still dropped all three from that
+    half's own text. The real issue is WinRT OCR dropping whole clusters
+    when too many small bordered badge+label pairs sit on one line — a
+    cousin of the already-documented "isolated single/double-char string
+    treated as noise" limitation (multiplier_filter_finder.py's Performance
+    Class letters), just for rows of them rather than single isolated ones.
+    Slicing narrowly enough that at most ~2 button-hint groups land in any
+    one OCR call is the mitigation — _BUTTON_BAR_SLICE_COUNT is deliberately
+    a tunable module constant since the right number is empirical/
+    field-tuned (2 wasn't enough; 4 was, on the field setup this was
+    diagnosed against), not derivable up front. Returns uppercase text
+    ("" on error/no window).
+    """
     if not _winrt_available():
         return ""
     win = _get_fh6_window_region()
@@ -306,12 +345,16 @@ def _read_car_screen_buttons() -> str:
         win = (0, 0, pw, ph)
     wx, wy, ww, wh = win
     top = int(wh * 0.80)  # bottom 20% — button bar
-    img = pyautogui.screenshot(region=(wx, wy + top, ww, wh - top))
-    try:
-        return asyncio.run(_winrt_ocr_async(img)).upper()
-    except Exception as exc:
-        print(f"[WARN] OCR error (car screen check): {exc}")
-        return ""
+    region_y, region_h = wy + top, wh - top
+    slices = _button_bar_slices(wx, ww)
+    texts = []
+    for i, (sx, sw) in enumerate(slices):
+        img = pyautogui.screenshot(region=(sx, region_y, sw, region_h))
+        try:
+            texts.append(asyncio.run(_winrt_ocr_async(img)))
+        except Exception as exc:
+            print(f"[WARN] OCR error (car screen check, slice {i}): {exc}")
+    return " ".join(texts).upper()
 
 
 # The minimap HUD (bottom-left corner) shows the co-driver's name and a

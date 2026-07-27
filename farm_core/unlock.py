@@ -162,6 +162,7 @@ def _wait_for_car_loaded() -> bool:
             return True
         if any(kw in buttons for kw in vision.CAR_LOADED_MENU_KEYWORDS):
             return False
+        keys._prevent_idle()  # see its docstring — this loop can outlast a real idle/screensaver timer
         keys._sleep(CAR_LOAD_POLL_INTERVAL)
         elapsed += CAR_LOAD_POLL_INTERVAL
         if keys._stop_event.is_set():

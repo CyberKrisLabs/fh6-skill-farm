@@ -45,6 +45,7 @@ def _wait_for_multiplier_car_loaded() -> bool:
             return True
         if any(kw in buttons for kw in vision.CAR_LOADED_MENU_KEYWORDS):
             return False
+        keys._prevent_idle()  # see its docstring — this loop can outlast a real idle/screensaver timer
         keys._sleep(CAR_LOAD_POLL_INTERVAL)
         elapsed += CAR_LOAD_POLL_INTERVAL
         if keys._stop_event.is_set():
@@ -60,6 +61,24 @@ def run_remove_iteration():
     keys.mp("down", wait=config.NAV_WAIT)  # Move down to "Yes" on the confirmation dialog
     keys.mp("enter")  # Confirm remove
     keys._sleep(0.5)
+
+
+def _replay_filter_find_sequence(sequence: list) -> None:
+    """Replay a sequence recorded by the Setup Wizard's "Find Automatically"
+    tool (farm_core/multiplier_filter_finder.py) — a list of [key, count]
+    pairs: Y to open the filter list, Down/Up to each target row, Enter to
+    check it, Escape to apply. Y/Enter/Escape get the same 1s settle
+    find_multiplier_filter() itself used while recording this (opening the
+    list, toggling a checkbox, and closing/applying it each need a moment to
+    register) — arrow keys use the normal config.NAV_WAIT navigation
+    cadence, same as the manual path below.
+    """
+    for key, count in sequence:
+        if key in ("y", "enter", "escape"):
+            keys.mp(key, count)
+            keys._sleep(1.0)
+        else:
+            keys.mp(key, count, config.NAV_WAIT)
 
 
 def _switch_to_multiplier_car() -> None:
@@ -78,17 +97,30 @@ def _switch_to_multiplier_car() -> None:
     not "Recently Added".
 
     Opens the car filter list and checks the multiplier car's Performance
-    Class and Car Type (both configured in Settings — a stock Subaru 22B is
-    Performance Class B / Retro Rally, but the multiplier car and its class
-    aren't fixed to that one, so both are user-specific) — it's a checkbox
-    list, so enter toggles a box without closing it, and both rows are
-    counted as down presses from the TOP of the list (both absolute, not
-    relative to each other; Performance Class is always a section above Car
-    Type in the list, so its row is always the smaller of the two). The
-    single escape afterward closes the filter list and applies it. Then
-    navigates the filtered "My Cars" grid (3 rows per column, dynamic
-    columns) to the configured car and selects it. All four positions are
-    user-specific — set in settings.
+    Class and Car Type — two mutually exclusive methods, same fallback
+    semantics as buy._navigate_car_collection_to_car(), gated on BOTH
+    whether a sequence was ever found AND the user's own preference (see
+    farm_settings.Settings.filter_auto_found/filter_use_auto_find — a
+    sequence can be recorded but deliberately not used, e.g. the user
+    unticked "Use Auto-Found Filter" in the Settings tab/Wizard):
+
+    - Auto-found (and in use): replay the exact sequence the Setup Wizard's
+      "Find Automatically" tool recorded (see _replay_filter_find_sequence
+      above).
+    - Manual (the fallback — either Find Automatically was never run/failed
+      for this filter, or the user chose not to use its result): both rows
+      configured in Settings (a stock Subaru 22B is Performance Class B /
+      Retro Rally, but the multiplier car and its class aren't fixed to that
+      one, so both are user-specific) — it's a checkbox list, so enter
+      toggles a box without closing it, and both rows are counted as down
+      presses from the TOP of the list (both absolute, not relative to each
+      other; Performance Class is always a section above Car Type in the
+      list, so its row is always the smaller of the two).
+
+    Either way, the filter list is closed (escape) and applied, then the
+    filtered "My Cars" grid (3 rows per column, dynamic columns) is
+    navigated to the configured car and it's selected. Grid position is
+    always manual — user-specific, set in Settings/the wizard.
     """
     print("  Switching to the 9x multiplier car...")
     # Settle time for the My Cars list to finish rendering after Unlock just
@@ -97,16 +129,20 @@ def _switch_to_multiplier_car() -> None:
     # below got dropped entirely on a laptop), same reasoning as
     # unlock._open_cars_sorted_by_recent's own settle before its first press.
     keys._sleep(1)
-    keys.mp("y")
-    perf_row = config.CFG.filter_performance_class_row
-    type_row = config.CFG.filter_car_type_row
-    if perf_row:
-        keys.mp("down", perf_row, config.NAV_WAIT)
-    keys.mp("enter")  # check performance class
-    if type_row > perf_row:
-        keys.mp("down", type_row - perf_row, config.NAV_WAIT)
-    keys.mp("enter")  # check car type
-    keys.mp("escape", wait=config.MENU_WAIT)  # close filter list, apply
+
+    if config.CFG.filter_auto_found and config.CFG.filter_use_auto_find:
+        _replay_filter_find_sequence(config.CFG.filter_find_sequence)
+    else:
+        keys.mp("y")
+        perf_row = config.CFG.filter_performance_class_row
+        type_row = config.CFG.filter_car_type_row
+        if perf_row:
+            keys.mp("down", perf_row, config.NAV_WAIT)
+        keys.mp("enter")  # check performance class
+        if type_row > perf_row:
+            keys.mp("down", type_row - perf_row, config.NAV_WAIT)
+        keys.mp("enter")  # check car type
+        keys.mp("escape", wait=config.MENU_WAIT)  # close filter list, apply
 
     if config.CFG.multiplier_car_col:
         keys.mp("right", config.CFG.multiplier_car_col, config.NAV_WAIT)

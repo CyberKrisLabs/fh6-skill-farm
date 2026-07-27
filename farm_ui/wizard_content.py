@@ -16,12 +16,20 @@ WIZARD_STEPS: dict[str, dict] = {
         "title": "Car Collection Position",
         "fallback_text": (
             "Go to the Festival menu → Campaign tab → Collection Journal → "
-            "Master Explorer → Car Collection, and find your farm car in the "
-            "list. Enter its row (from the top) and column (1-5) below."
+            'the right-hand card ("Discover Japan" — labeled with your current '
+            'rank, e.g. "Visitor", "Master Explorer", etc.; the rank name '
+            "changes as you progress, the card itself doesn't) → Car Collection, "
+            "and find your farm car in the list. Enter its row (from the top) "
+            "and column (1-5) below."
         ),
         "slides": [
             ("01.png", "Go to the Festival Site (or your House), then the Campaign tab, and click Collection Journal."),
-            ("02.png", "Click Master Explorer."),
+            (
+                "02.png",
+                'Click the right-hand card ("Discover Japan"). It\'s labeled with your '
+                'current rank at the bottom — here it\'s "Master Explorer", but yours '
+                'might say "Visitor" or anything in between; that\'s normal.',
+            ),
             ("03.png", "Click Car Collection."),
             (
                 "04.png",

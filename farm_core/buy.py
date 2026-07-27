@@ -55,16 +55,49 @@ def run_buy_iteration():
     keys.mp("enter")  # Confirm after the purchase dialog
 
 
+def _replay_find_sequence(sequence: list) -> None:
+    """Replay a sequence recorded by the Setup Wizard's "Find Automatically"
+    tool (farm_core/car_collection_finder.py) — a list of [key, count] pairs: Backspace
+    to open the Manufacturers list, Down/Right to the target manufacturer,
+    Enter to jump, then a small local Down/Up/Left/Right offset within Car
+    Collection. Backspace/Enter get the same 1s settle find_car() itself
+    used while recording this (opening the list / landing after the jump
+    both need a moment to render before further input) — arrow keys use the
+    normal config.NAV_WAIT navigation cadence, same as the manual path below.
+    """
+    for key, count in sequence:
+        if key in ("backspace", "enter"):
+            keys.mp(key, count)
+            keys._sleep(1.0)
+        else:
+            keys.mp(key, count, config.NAV_WAIT)
+
+
 def _navigate_car_collection_to_car() -> None:
     """Navigate from the top of the Car Collection list to the configured car position.
 
-    The list is always 5 columns wide with a dynamic number of rows, sorted by
-    manufacturer name (default sort). Flow is top → down first, then right:
-    row = down presses, column = right presses (0–4). The position is
-    user-specific (depends on the cars available to the account) — set in
-    settings. Cursor is assumed to start on the FIRST car (top-left).
+    Two mutually exclusive methods, depending on how this car's position was
+    set up AND the user's own preference (see
+    farm_settings.CarConfig.car_collection_auto_found/car_collection_use_auto_find
+    — a sequence can be recorded but deliberately not used, e.g. the user
+    unticked "Use Auto-Found Position" in the Settings tab/Wizard):
+
+    - Auto-found (and in use): replay the exact sequence the Setup Wizard's
+      "Find Automatically" tool recorded (see _replay_find_sequence above) —
+      a manufacturer-list jump plus a small local offset, not a row/column
+      count (see docs/car-position-autodetect-plan.md for why one isn't
+      recoverable once a manufacturer jump is involved).
+    - Manual (the fallback — either Find Automatically was never run/failed,
+      or the user chose not to use its result): the list is always 5 columns
+      wide with a dynamic number of rows, sorted by manufacturer name
+      (default sort). Flow is top → down first, then right: row = down
+      presses, column = right presses (0–4). Cursor is assumed to start on
+      the FIRST car (top-left).
     """
     car = config.CFG.car
+    if car.car_collection_auto_found and car.car_collection_use_auto_find:
+        _replay_find_sequence(car.car_collection_find_sequence)
+        return
     if car.car_collection_row:
         keys.mp("down", car.car_collection_row, config.NAV_WAIT)
     if car.car_collection_col:

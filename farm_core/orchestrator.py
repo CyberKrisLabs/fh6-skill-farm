@@ -342,7 +342,21 @@ def _run_farm_inner(
             _current_cycle = cyc
             is_final = False
 
-            if cyc == 1:
+            if cyc == 1 and start == "challenge" and remaining_cr is not None and buy_count == 0:
+                # Same treatment as the "CR exhausted mid-cycle" branch below, but for CR that
+                # was ALREADY insufficient for even one car before cycle 1 even started (only
+                # the "else: # challenge" branch above computes buy_count from cr — this can't
+                # fire for a buy/unlock/remove start, whose counts come from skill_points/cars
+                # instead). Without this, cycle 1 always ran the full phase set regardless,
+                # navigating through real Buy/Unlock/Remove transitions for phases that would
+                # do nothing (0 cars bought/unlocked/removed) — confirmed in the field with
+                # cr=500 (below any real car's price): "Phase: BUY — 0 x ... (0 CR total)" still
+                # ran a real in-game transition into Car Collection for zero purchases.
+                phases_this_cycle = ["challenge"]
+                b, u = 0, config.NUM_CARS
+                is_final = True
+                print("\nCR insufficient to buy even one car — running challenges only, then stopping.")
+            elif cyc == 1:
                 phases_this_cycle = phases_to_run
                 b, u = buy_count, unlock_count
             elif remaining_cr is not None and remaining_cr < config.CAR_PRICE_CR:

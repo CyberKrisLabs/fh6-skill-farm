@@ -60,26 +60,47 @@ python skill_farm_ui.py
 ```
 
 1. Launch FH6 and get to Free Roam (in-car, on the map)
-2. Open FH6 Skill Farm and fill in the Settings tab: farm car, Car Collection
+2. Open FH6 Skill Farm and run the **Setup Wizard** (button atop the Settings
+   tab, or prompted automatically the first time you hit Start) — it walks
+   through Car Collection position, the 9x multiplier car's filter, and its
+   position, with screenshots for each step. The first two steps have a
+   **"Find Automatically"** button: open the right screen in-game, click it,
+   switch back to FH6 during the 5-second countdown, and it searches for your
+   car/filter and records the navigation itself — no manual counting needed.
+   A small status HUD appears over the FH6 window itself while it searches.
+   Manual Row/Column entry is still there as a fallback for either step, and
+   as the only option for the multiplier car's own position (Step 3), which
+   isn't automatable — see the ⓘ info buttons for why. **Re-running "Find
+   Automatically" clears the previously recorded result before the new
+   search starts** — if that new attempt then fails, the old working result
+   is gone, not restored, and you're left on manual entry until a search
+   succeeds again. Only re-run it when you actually suspect it's gone stale
+   (e.g. your garage changed), not just to double-check a result that's
+   already working.
+3. Alternatively, fill in the Settings tab directly: farm car, Car Collection
    Row/Column, share code, and the 9x multiplier car filter + position. Every
    field there (and on the Timings tab) saves itself automatically as you
    edit it — there's no Save button. "Skip Remove in Cycle" and the in-game
    overlay are optional and off by default.
-3. Pick a "Start From" point on the Farm tab and enter your current Skill Points
-4. Hit **Start** — switch back to the game during the countdown and let it run
+4. Pick a "Start From" point on the Farm tab and enter your current Skill Points
+5. Hit **Start** — switch back to the game during the countdown and let it run
 
 Each starting point has its own ⓘ info button in the app explaining exactly
 where in the game to be before pressing Start.
 
-**Why manual entry for Car Collection position and the 9x multiplier car?**
-These positions come from your own account's Car Collection / My Cars lists,
-which are different for everyone — how many cars you own and which ones
-shifts the exact row/column for any given car. Hardcoding fixed positions
-would break the moment FH6 adds new cars in a game update, or the moment your
-own garage changes at all — a tool that asks you to type these in once (and
-re-check them after any garage change, see the ⓘ info buttons in Settings)
-keeps working across updates instead of needing constant maintenance to chase
-a moving target.
+**Why does any of this need per-account setup at all?** Car Collection
+position and the 9x multiplier car's filter/position come from your own
+account's Car Collection / My Cars lists, which are different for everyone —
+how many cars you own and which ones shifts the exact position for any given
+car. Hardcoding fixed positions would break the moment FH6 adds new cars in a
+game update, or the moment your own garage changes at all. Find Automatically
+re-derives your Car Collection position and filter rows by searching for them
+directly (by car name, Performance Class, and Car Type) rather than assuming
+a fixed slot, so it keeps working across garage changes without needing you
+to recount anything — re-run it if you're ever unsure it's still accurate.
+The one position that's still manual-only (the multiplier car's spot in the
+filtered grid) still needs a re-check after garage changes — see the ⓘ info
+buttons in Settings.
 
 ---
 
@@ -112,6 +133,8 @@ samples input once per rendered frame and an instant press can be dropped entire
 
 | Feature | Description |
 |---|---|
+| Setup Wizard | Guided, screenshotted walkthrough of the one-time per-account setup (Car Collection position, 9x multiplier car filter + position) |
+| Find Automatically | Searches Car Collection (by car name) and My Cars' Filter list (by Performance Class + Car Type) and records the navigation itself — no manual row/column counting for either one |
 | Challenge Only mode | Farm skill points via the challenge alone, bounded to ~999 SP — no car/garage setup required |
 | Full cycle mode | Challenge → Buy → Unlock → Remove, repeating for as many loops as your Credits allow |
 | Flexible starting point | Start from Main Menu, Challenge, Buy, Unlock, or Remove — useful for resuming a partial run |
@@ -177,6 +200,11 @@ farm_core/               Core automation
   config.py                CFG load, wait constants, derived economics
   keys.py                   Keyboard input primitives, stop event, watchdog
   vision.py                 OCR screen-detection helpers
+  car_collection_finder.py find_car() — Car Collection position finder behind
+                            Setup Wizard Step 1's "Find Automatically"
+  multiplier_filter_finder.py find_multiplier_filter() — 9x multiplier car
+                            filter finder behind Setup Wizard Step 2's
+                            "Find Automatically"
   challenge.py              Phase: Challenge
   buy.py                    Phase: Buy
   unlock.py                 Phase: Unlock
@@ -195,6 +223,10 @@ farm_ui/                 PySide6 GUI
   guide_content.py             Shared explanatory text for the ⓘ info popups + Guide tab
   info_tab.py                 Version, GitHub/donate links, update check
   overlay.py                   In-game overlay (optional, off by default)
+  finder_overlay.py            On-screen status HUD shown during a Find Automatically search
+  wizard.py                    Setup Wizard — guided setup + Find Automatically buttons
+  wizard_content.py             Per-step screenshots/captions for the Wizard
+  paths.py                      Bundled-resource path resolution (PyInstaller-safe)
   app.py                       Main window
 ```
 
@@ -218,10 +250,12 @@ a running game isn't unit-tested beyond checking sequence data shapes.
 | Problem | Fix |
 |---|---|
 | "Setup required" warning on Start | Fill in Car Collection Row/Column and the 9x multiplier car filter/position in Settings, or tick "Challenge Only" to skip car setup entirely |
+| Find Automatically can't find the car/filter | Make sure the right screen is open in-game *before* clicking it (Car Collection for Step 1, My Cars for Step 2), and that FH6 is focused when the countdown ends — it falls back to whatever's in the manual Row/Column fields if it fails |
 | Timings feel off for your PC | Adjust the fallback wait constants in the Timings tab and re-run |
 | Farm doesn't find the right cars for Unlock/Remove | Make sure no other cars were acquired after the ones you're farming — Unlock/Remove sort by recently added |
 | Multiplier car ends up in the wrong position at runtime | Its Position (Settings tab) must be recorded on My Cars' *default* sort — not "Recently Added" |
 | Farm gets stuck starting from "Remove" | Don't be actively driving the 9x multiplier car when you start from there — switch to any other car first |
+| Farm stalls while selecting a car in Unlock/Remove | The tool nudges the mouse periodically during this wait to stop an idle screensaver from engaging, but it isn't a guarantee — disable your screensaver/sleep settings for the duration of a farm run to be safe |
 
 **Config location** (useful for debugging):
 - Settings: `%APPDATA%\FH6SkillFarm\skill_farm_settings.json`
