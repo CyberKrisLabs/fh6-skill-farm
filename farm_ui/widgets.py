@@ -26,7 +26,14 @@ class _CRSpinBox(QSpinBox):
     def valueFromText(self, text: str) -> int:
         if text in ("unlimited", ""):
             return 0
-        return int("".join(c for c in text if c.isdigit()) or "0")
+        # Clamp to the spin box's own range before this reaches Qt/C++ —
+        # QSpinBox normally clamps typed values itself, but overriding
+        # valueFromText bypasses that, and an unclamped Python int (e.g. from
+        # pasting a long digit string) silently overflows Qt's 32-bit int
+        # storage (shiboken RuntimeWarning, then a crash) instead of erroring.
+        digits = "".join(c for c in text if c.isdigit())
+        value = int(digits or "0")
+        return max(self.minimum(), min(self.maximum(), value))
 
     def validate(self, text: str, pos: int):
         if text in ("unlimited", ""):
@@ -43,11 +50,17 @@ class _CRSpinBox(QSpinBox):
         """Insert thousand separators as the user types, instead of only on
         focus-out — so "1000000" reads as "1,000,000" immediately. Keeps the
         cursor anchored to the same digit (not the text end) as separators shift.
+
+        Also clamps to the spin box's own maximum live, not just on commit —
+        otherwise typing/pasting a long digit string would briefly show its
+        full, unclamped value (e.g. "6,090,000,000") before snapping down to
+        the real max on focus-out/Enter (see valueFromText), which reads as a
+        bug rather than an enforced cap.
         """
         digits = "".join(c for c in text if c.isdigit())
         if not digits:
             return
-        formatted = f"{int(digits):,}"
+        formatted = f"{min(int(digits), self.maximum()):,}"
         if formatted == text:
             return
         edit = self.lineEdit()

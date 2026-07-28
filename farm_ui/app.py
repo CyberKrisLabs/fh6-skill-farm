@@ -71,11 +71,22 @@ class SkillFarmWindow(QMainWindow, FarmTabMixin, SettingsTabMixin, TimingsTabMix
 
         self._ocr_challenge_override: tuple[int, int] | None = None  # (base, buffered) from live OCR
 
+        # Live XP/wheelspins/CR-gained-so-far counter (Farm tab's Log header
+        # row) — reset for real in FarmTabMixin._launch at the start of every
+        # run; initialized here just so _on_gains_progress has something to
+        # accumulate into if it ever fired before a first run.
+        self._gains_seen: dict[tuple[str, int], int] = {}
+        self._gained_xp = 0
+        self._gained_wheelspins = 0
+        self._gained_super_wheelspins = 0
+        self._gained_cr = 0
+
         self._build_ui()
         self._update_fields()
         self._update_summary()
         _log_bridge.message.connect(self._on_log)
         _log_bridge.challenge_adjusted.connect(self._on_challenge_adjusted)
+        _log_bridge.phase_progress.connect(self._on_gains_progress)
         _update_bridge.result.connect(self._on_update_result)
 
     def _build_ui(self) -> None:

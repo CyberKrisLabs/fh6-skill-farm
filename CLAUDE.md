@@ -566,6 +566,70 @@ pytest --cov --cov-report=term-missing
   constant (`LOADING_TRAVEL_WAIT`) was deleted outright instead of kept as a
   fallback — its anchor is a straight reuse of an already-proven keyword set
   (`CAR_LOADED_MENU_KEYWORDS`), not a new/unverified one.
+- **XP/Wheelspins/CR gains tracking (2026-07-28), both live (Farm tab's Log
+  header row) and estimated (the pre-run Summary line) — see "XP and CR.txt"
+  for the field-measured source numbers.** XP = challenges completed ×
+  `_XP_PER_CHALLENGE` (2,500 — the ultimate skill chain reward shown after
+  every challenge) + cars unlocked × that car's `sp_to_unlock` ×
+  `_XP_PER_SP_UNLOCK` (200 — exact on both the Lambo's 39 SP/7800 XP and the
+  Viper's 30 SP/6000 XP). Wheelspins/Super Wheelspins/CR are cars unlocked ×
+  the selected car's own `wheelspins`/`super_wheelspins`/`cr_reward` yields
+  (0-value ones omitted, same convention as the Settings tab's car-reward
+  readouts). **CR gained from challenges themselves is deliberately never
+  tracked or shown** — ~3,721 CR over 24 challenges (per the same notes) is
+  noise; CR from a car's `cr_reward` (e.g. the Viper's 150,000 CR) very much
+  is not, and is shown.
+  - Live counter (`farm_tab._on_gains_progress`) is fed by the existing
+    `orchestrator.phase_progress_hook` (already wired for the in-game
+    overlay — see `overlay.py`'s own `_on_phase_progress`), not by scraping
+    log text.
+  - **`_report_progress("challenge", ...)` fires only after
+    `challenge.run_challenge_iteration()` returns success (2026-07-28
+    follow-up fix)**, not when the iteration is announced/started — it used
+    to fire right after printing `"  Challenge N/total"` and before the race
+    actually ran, so the live XP counter (and the overlay's progress number)
+    visibly jumped by 2,500 XP at the START of a challenge instead of at
+    `"[INFO] Challenge N/total finished successfully"`, and would have
+    over-counted a `[RESET] Challenge not counted — retrying` the same way
+    (the retry re-announces the same N, but the OLD before-the-fact report
+    had already fired once per attempt, not once per success). All three
+    challenge-loop variants in `run_phase` (fixed count, skill-points-bound,
+    and "run until interrupted") now only call `_report_progress` inside
+    `if success:`, using the post-increment `completed`/`i`. The `unlock`
+    branch got the same treatment for the same reason (report after
+    `unlock.run_unlock_iteration()` returns, not before) — as a side effect
+    this also means iteration 1's report now uses the SP-adjusted `effective`
+    count when `run_unlock_iteration` lowers it, instead of the
+    pre-adjustment value. `buy`/`remove` were deliberately left reporting
+    before-the-fact — neither phase retries, and neither feeds the gains
+    counter, so there was no bug to fix there.
+  - `farm_tab._on_gains_progress` still dedupes on top of this (keying the
+    last-seen `current` by `(phase, cycle)`, only crediting a
+    strictly-increasing value) as defense-in-depth, not as the primary
+    correctness mechanism anymore — the real fix is that the hook itself now
+    only fires once per confirmed success.
+  - Resets to nothing at the start of every run (`_launch`) and freezes at
+    its final value when the run stops, same as the elapsed-time label right
+    next to it.
+  - Estimated totals (`_gains_estimate_str`, fed by `_time_main_challenge`/
+    `_time_buy`/`_time_unlock_remove`, each now returning `(time_str,
+    totals)` instead of just a string) are computed from the same whole-
+    session cycle simulation (`_simulate_subsequent_cycles`) that already
+    drives the time estimate — so they reflect the buffer setting and CR
+    limits across every simulated cycle, not just the first one. `totals` is
+    `None` when `cr<=0` (the farm loops forever in that case — same
+    reasoning as `_cycle_tag`'s "↺ forever"; there's no finite total to
+    show). An explicit "Start From: Remove" doesn't count *that* remove's
+    own cars toward gains (they were already unlocked in an earlier run —
+    only cycle 2 onward's new buy/unlock counts).
+- **The Summary line's challenge-count format now depends on the Buffer
+  checkbox (2026-07-28).** `Challenge 12 + 4 buffer = 16×` (showing the
+  base/buffer/total breakdown) was previously shown even with the buffer
+  OFF, where it degenerated to a redundant `Challenge 16 = 16×` — fixed via
+  `_challenge_count_str`: buffer off → plain `x16`; buffer on → the full
+  breakdown, unchanged. Applies to both `_challenge_lbl` (Main/Challenge
+  start) and the unlock/remove branch's `challenge_tag` (including the OCR-
+  adjusted variant).
 
 ---
 

@@ -84,10 +84,10 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
             while completed < challenge_iters and not keys._stop_event.is_set():
                 _label = f"{completed + 1}/{challenge_iters}"
                 print(f"  Challenge {_label}")
-                _report_progress("challenge", completed + 1, challenge_iters)
                 success = challenge.run_challenge_iteration(final=completed + 1 == challenge_iters, label=_label)
                 if success:
                     completed += 1
+                    _report_progress("challenge", completed, challenge_iters)
                 else:
                     print("  [RESET] Challenge not counted — retrying")
         elif args.skill_points > 0:
@@ -101,10 +101,10 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
             while completed < iterations and not keys._stop_event.is_set():
                 _label = f"{completed + 1}/{iterations}"
                 print(f"  Challenge {_label}")
-                _report_progress("challenge", completed + 1, iterations)
                 success = challenge.run_challenge_iteration(final=completed + 1 == iterations, label=_label)
                 if success:
                     completed += 1
+                    _report_progress("challenge", completed, iterations)
                 else:
                     print("  [RESET] Challenge not counted — retrying")
         else:
@@ -113,9 +113,10 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
             while not keys._stop_event.is_set():
                 i += 1
                 print(f"  Challenge {i}")
-                _report_progress("challenge", i, 0)
                 success = challenge.run_challenge_iteration(label=str(i))
-                if not success:
+                if success:
+                    _report_progress("challenge", i, 0)
+                else:
                     print("  [RESET] Challenge not counted")
                     i -= 1
 
@@ -137,7 +138,6 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
         while i < effective and not keys._stop_event.is_set():
             i += 1
             print(f"  Unlock {i}/{effective}")
-            _report_progress("unlock", i, effective)
             detected_sp, adjusted = unlock.run_unlock_iteration(
                 i,
                 expected_cars=effective if i == 1 else None,
@@ -147,6 +147,7 @@ def run_phase(name, args, challenge_iters=None, num_cars=None, expected_sp_hint=
                 _ocr_sp = detected_sp
                 if adjusted is not None:
                     effective = adjusted
+            _report_progress("unlock", i, effective)
         return _ocr_sp, effective
 
     elif name == "remove":

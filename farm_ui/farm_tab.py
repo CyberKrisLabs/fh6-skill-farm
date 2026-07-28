@@ -64,6 +64,17 @@ _SECS_TRANS_CHALLENGE = 40  # remove done → challenge start (cycle 2+) — var
 _SECS_TRANS_BUY = 46  # challenge end → auto show
 _SECS_TRANS_UNLOCK = 7  # buy done → car list — exact
 
+# XP economy, field-measured 2026-07-28 (see "XP and CR.txt"): 2,500 XP per
+# challenge (the ultimate skill chain reward shown after every run) and 200
+# XP per skill point spent unlocking (7800 XP / 39 SP on the Lambo, 6000 XP /
+# 30 SP on the Viper — both land on exactly 200). CR gained from challenges
+# themselves is intentionally NOT tracked anywhere below — ~3,721 CR over 24
+# challenges (per the same notes) is noise not worth surfacing. CR gained
+# from unlocking (CarInfo.cr_reward, e.g. the Viper's 150,000 CR) IS tracked,
+# since that's a real per-car reward, not challenge change.
+_XP_PER_CHALLENGE = 2500
+_XP_PER_SP_UNLOCK = 200
+
 
 def _fmt_time(secs: float) -> str:
     m = round(secs) // 60
@@ -87,6 +98,30 @@ def _remove_secs(n: int) -> int:
 def _noncycle_secs(n: int) -> int:
     """Buy+unlock+remove time for n cars including transitions."""
     return int(_SECS_TRANS_BUY + n * _SECS_PER_BUY + _SECS_TRANS_UNLOCK + n * _SECS_PER_UNLOCK) + _remove_secs(n)
+
+
+def _gains_estimate_str(total_challenges: int, total_cars_unlocked: int) -> str:
+    """Estimated XP/wheelspins/CR for a whole simulated session — challenges ×
+    _XP_PER_CHALLENGE, plus cars-unlocked × (this car's sp_to_unlock ×
+    _XP_PER_SP_UNLOCK) for XP, and cars-unlocked × the car's own
+    wheelspins/super_wheelspins/cr_reward yields. Zero-value rewards (e.g.
+    Super Wheelspins for a car that doesn't grant any) are omitted, same
+    convention as the Settings tab's own car-reward readouts.
+    """
+    car = config.CFG.car
+    xp = total_challenges * _XP_PER_CHALLENGE + total_cars_unlocked * car.sp_to_unlock * _XP_PER_SP_UNLOCK
+    wheelspins = total_cars_unlocked * car.wheelspins
+    super_wheelspins = total_cars_unlocked * car.super_wheelspins
+    cr_reward = total_cars_unlocked * car.cr_reward
+    parts = []
+    if super_wheelspins:
+        parts.append(f"x{super_wheelspins} Super Wheelspins")
+    if wheelspins:
+        parts.append(f"x{wheelspins} Wheelspins")
+    if cr_reward:
+        parts.append(f"{cr_reward:,} CR")
+    parts.append(f"{xp:,} XP")
+    return ", ".join(parts)
 
 
 class FarmTabMixin:
@@ -264,6 +299,10 @@ class FarmTabMixin:
         log_hdr = QLabel("LOG")
         log_hdr.setProperty("class", "section-label")
         log_header_row.addWidget(log_hdr)
+        log_header_row.addStretch()
+        self._gains_lbl = QLabel("")
+        self._gains_lbl.setProperty("class", "small-label")
+        log_header_row.addWidget(self._gains_lbl)
         log_header_row.addStretch()
         self._elapsed_lbl = QLabel("")
         self._elapsed_lbl.setProperty("class", "small-label")
@@ -465,23 +504,32 @@ class FarmTabMixin:
             loops = (1 if first_buy_count > 0 else 0) + len(sim_cycles)
             return f"↺ {loops} loop{'s' if loops != 1 else ''}  ({cr:,} CR)"
 
-        def _time_main_challenge(init_secs: int, first_challenges: int, first_buy_count: int) -> str:
+        def _time_main_challenge(init_secs: int, first_challenges: int, first_buy_count: int):
+            """Returns (time_str, totals) — totals is (total_challenges,
+            total_cars_unlocked) for _gains_estimate_str, or None when cr<=0
+            (the farm loops forever, so there's no finite total to show)."""
             t1 = init_secs + first_challenges * _SECS_PER_CHALLENGE + _noncycle_secs(first_buy_count)
             if cr <= 0:
-                return f"~{_fmt_time(t1)}/cycle"
+                return f"~{_fmt_time(t1)}/cycle", None
             sim_cycles, final_top_up = _simulate_subsequent_cycles(first_buy_count, first_buy_count)
             t = t1
+            total_challenges = first_challenges
+            total_cars = first_buy_count
             for n, ci in sim_cycles:
                 t += _SECS_TRANS_CHALLENGE + ci * _SECS_PER_CHALLENGE + _noncycle_secs(n)
+                total_challenges += ci
+                total_cars += n
             # CR always runs out eventually here — once the last affordable
             # buy/unlock/remove cycle finishes, the farm runs one more
             # challenge-only top-up to cap skill points before stopping
             # (orchestrator.py's "CR exhausted" branch), sized to whatever SP
             # that last cycle's unlock actually spent.
             t += _SECS_TRANS_CHALLENGE + final_top_up * _SECS_PER_CHALLENGE
-            return f"~{_fmt_time(t)} total"
+            total_challenges += final_top_up
+            return f"~{_fmt_time(t)} total", (total_challenges, total_cars)
 
-        def _time_buy(to_buy: int, unlock_n: int, first_challenges: int) -> str:
+        def _time_buy(to_buy: int, unlock_n: int, first_challenges: int):
+            """Returns (time_str, totals) — see _time_main_challenge."""
             t_partial = int(to_buy * _SECS_PER_BUY + _SECS_TRANS_UNLOCK + unlock_n * _SECS_PER_UNLOCK) + _remove_secs(
                 unlock_n
             )
@@ -491,17 +539,27 @@ class FarmTabMixin:
                     + _buf(config.CHALLENGES_SUBSEQUENT) * _SECS_PER_CHALLENGE
                     + _noncycle_secs(config.NUM_CARS)
                 )
-                return f"~{_fmt_time(t_partial)}, then ~{_fmt_time(tn)}/cycle"
+                return f"~{_fmt_time(t_partial)}, then ~{_fmt_time(tn)}/cycle", None
             sim_cycles, final_top_up = _simulate_subsequent_cycles(
                 to_buy, unlock_n, first_subsequent_ci=first_challenges
             )
             t = t_partial
+            total_challenges = first_challenges
+            total_cars = unlock_n
             for n, ci in sim_cycles:
                 t += _SECS_TRANS_CHALLENGE + ci * _SECS_PER_CHALLENGE + _noncycle_secs(n)
+                total_challenges += ci
+                total_cars += n
             t += _SECS_TRANS_CHALLENGE + final_top_up * _SECS_PER_CHALLENGE
-            return f"~{_fmt_time(t)} total"
+            total_challenges += final_top_up
+            return f"~{_fmt_time(t)} total", (total_challenges, total_cars)
 
-        def _time_unlock_remove(phase: str, n: int, first_challenges: int) -> str:
+        def _time_unlock_remove(phase: str, n: int, first_challenges: int):
+            """Returns (time_str, totals) — see _time_main_challenge. For an
+            explicit "Start From: Remove", the n cars being removed here were
+            already unlocked in an earlier run, so they don't count toward
+            this session's NEW gains (only the challenges/cars from cycle 2
+            onward do)."""
             if phase == "unlock":
                 t_partial = int(n * _SECS_PER_UNLOCK) + _remove_secs(n)
             else:
@@ -514,24 +572,41 @@ class FarmTabMixin:
                     + _buf(config.CHALLENGES_SUBSEQUENT) * _SECS_PER_CHALLENGE
                     + _noncycle_secs(config.NUM_CARS)
                 )
-                return f"~{_fmt_time(t_partial + first_challenges * _SECS_PER_CHALLENGE)}, then ~{_fmt_time(tn)}/cycle"
+                return (
+                    f"~{_fmt_time(t_partial + first_challenges * _SECS_PER_CHALLENGE)}, then ~{_fmt_time(tn)}/cycle",
+                    None,
+                )
             # Unlock/Remove starts never buy in cycle 1 (first_buy_count=0);
             # initial_last_unlock=n matches orchestrator.py's own seed.
             sim_cycles, final_top_up = _simulate_subsequent_cycles(0, n, first_subsequent_ci=first_challenges)
             t = t_partial + int(first_challenges * _SECS_PER_CHALLENGE)
+            total_challenges = first_challenges
+            total_cars = n if phase == "unlock" else 0
             for cn, ci in sim_cycles:
                 t += _SECS_TRANS_CHALLENGE + ci * _SECS_PER_CHALLENGE + _noncycle_secs(cn)
+                total_challenges += ci
+                total_cars += cn
             t += _SECS_TRANS_CHALLENGE + final_top_up * _SECS_PER_CHALLENGE
-            return f"~{_fmt_time(t)} total"
+            total_challenges += final_top_up
+            return f"~{_fmt_time(t)} total", (total_challenges, total_cars)
 
         # ── per-phase summary + time ────────────────────────────────────────
         def _buf_suffix(buf_r: int) -> str:
             return f" + {buf_r} buffer" if buf_r > 0 else ""
 
+        def _challenge_count_str(base_c: int, total_c: int) -> str:
+            # With the buffer off, base_c == total_c always, and the old
+            # "N = N×" breakdown was pure noise — just "xN". With the buffer
+            # on, keep the base+buffer=total breakdown so it's clear how much
+            # of the total is buffer padding.
+            if not self._buffer_chk.isChecked():
+                return f"x{total_c}"
+            return f"{base_c}{_buf_suffix(total_c - base_c)} = {total_c}×"
+
         def _challenge_lbl(base_c: int, buf_c: int) -> str:
             if base_c == 0:
                 return "Challenge 0×"
-            return f"Challenge {base_c}{_buf_suffix(buf_c)} = {base_c + buf_c}×"
+            return f"Challenge {_challenge_count_str(base_c, base_c + buf_c)}"
 
         def _remove_lbl(n: int) -> str:
             # Remove-count label for a remove reached via an automatic cycle
@@ -552,6 +627,7 @@ class FarmTabMixin:
             init_secs = _SECS_TRANS_INIT if phase == "main" else 0
             if self._challenge_only_chk.isChecked():
                 parts.append(_challenge_lbl(base, challenges - base))
+                parts.append(_gains_estimate_str(challenges, 0))
                 parts.append(f"~{_fmt_time(init_secs + challenges * _SECS_PER_CHALLENGE)} total")
             else:
                 # By the time Buy runs, the preceding challenge phase has
@@ -567,7 +643,10 @@ class FarmTabMixin:
                     _remove_lbl(buy_count),
                 ]
                 parts.append(_cycle_tag(buy_count, buy_count))
-                parts.append(_time_main_challenge(init_secs, challenges, buy_count))
+                time_str, totals = _time_main_challenge(init_secs, challenges, buy_count)
+                if totals is not None:
+                    parts.append(_gains_estimate_str(*totals))
+                parts.append(time_str)
 
         elif phase == "buy":
             to_buy = self._cars_spin.value()
@@ -592,7 +671,10 @@ class FarmTabMixin:
             # accurate number to show; _cycle_tag's loop count and the time
             # estimate below already account for the real per-cycle values.
             parts.append(_cycle_tag(to_buy, unlock_count, first_subsequent_ci=first_challenges))
-            parts.append(_time_buy(to_buy, unlock_count, first_challenges))
+            time_str, totals = _time_buy(to_buy, unlock_count, first_challenges)
+            if totals is not None:
+                parts.append(_gains_estimate_str(*totals))
+            parts.append(time_str)
 
         elif phase in ("unlock", "remove"):
             n = self._cars_spin.value()
@@ -606,9 +688,7 @@ class FarmTabMixin:
                 parts.append(f"Remove {n}")
             if self._ocr_challenge_override is not None:
                 base_c, first_challenges = self._ocr_challenge_override
-                challenge_tag = (
-                    f"challenge {base_c}{_buf_suffix(first_challenges - base_c)} = {first_challenges}× first [OCR adj.]"
-                )
+                challenge_tag = f"challenge {_challenge_count_str(base_c, first_challenges)} first [OCR adj.]"
             else:
                 base_c = (
                     math.ceil((config.SKILL_POINTS_CAP - sp_after_unlock) / config.POINTS_PER_CHALLENGE)
@@ -616,11 +696,12 @@ class FarmTabMixin:
                     else 0
                 )
                 first_challenges = _buf(base_c)
-                challenge_tag = (
-                    f"challenge {base_c}{_buf_suffix(first_challenges - base_c)} = {first_challenges}× first"
-                )
+                challenge_tag = f"challenge {_challenge_count_str(base_c, first_challenges)} first"
             parts.append(challenge_tag + "  →  " + _cycle_tag(0, n, first_subsequent_ci=first_challenges))
-            parts.append(_time_unlock_remove(phase, n, first_challenges))
+            time_str, totals = _time_unlock_remove(phase, n, first_challenges)
+            if totals is not None:
+                parts.append(_gains_estimate_str(*totals))
+            parts.append(time_str)
 
         self._summary.setText("  →  ".join(parts))
 
@@ -714,6 +795,12 @@ class FarmTabMixin:
         self._elapsed_seconds = 0
         self._elapsed_lbl.setText("00:00:00")
         self._elapsed_timer.start()
+        self._gains_seen = {}
+        self._gained_xp = 0
+        self._gained_wheelspins = 0
+        self._gained_super_wheelspins = 0
+        self._gained_cr = 0
+        self._gains_lbl.setText("")
         self._farm_thread = threading.Thread(target=_run, daemon=True)
         self._farm_thread.start()
 
@@ -797,6 +884,47 @@ class FarmTabMixin:
         h, rem = divmod(self._elapsed_seconds, 3600)
         m, s = divmod(rem, 60)
         self._elapsed_lbl.setText(f"{h:02d}:{m:02d}:{s:02d}")
+
+    def _on_gains_progress(self, phase: str, current: int, total: int, cycle: int) -> None:
+        """Live counterpart to _gains_estimate_str, fed by the same
+        orchestrator.phase_progress_hook the in-game overlay uses (see
+        overlay.py's _on_phase_progress) instead of scraping log text.
+
+        The challenge phase's own loop re-announces the SAME (phase, current)
+        pair on a reset/retry (completed only advances on success — see
+        orchestrator.run_phase) so a naive "+1 per call" would double-count a
+        retried challenge. Keying the last-seen current by (phase, cycle) and
+        only crediting a strictly-increasing value sidesteps that: a retry
+        repeats the same current and is ignored, a real advance is new.
+        """
+        if phase not in ("challenge", "unlock"):
+            return
+        key = (phase, cycle)
+        last = self._gains_seen.get(key, 0)
+        if current <= last:
+            return
+        delta = current - last
+        self._gains_seen[key] = current
+        if phase == "challenge":
+            self._gained_xp += delta * _XP_PER_CHALLENGE
+        else:
+            car = config.CFG.car
+            self._gained_xp += delta * car.sp_to_unlock * _XP_PER_SP_UNLOCK
+            self._gained_wheelspins += delta * car.wheelspins
+            self._gained_super_wheelspins += delta * car.super_wheelspins
+            self._gained_cr += delta * car.cr_reward
+        self._update_gains_label()
+
+    def _update_gains_label(self) -> None:
+        parts = []
+        if self._gained_super_wheelspins:
+            parts.append(f"x{self._gained_super_wheelspins} Super")
+        if self._gained_wheelspins:
+            parts.append(f"x{self._gained_wheelspins} Wheelspins")
+        if self._gained_cr:
+            parts.append(f"{self._gained_cr:,} CR")
+        parts.append(f"{self._gained_xp:,} XP")
+        self._gains_lbl.setText("  ·  ".join(parts))
 
     def _on_log(self, text: str) -> None:
         if text == "\x00DONE":
