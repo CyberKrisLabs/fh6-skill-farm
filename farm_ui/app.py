@@ -83,6 +83,7 @@ class SkillFarmWindow(
         self._gained_wheelspins = 0
         self._gained_super_wheelspins = 0
         self._gained_cr = 0
+        self._gained_challenges = 0
         self._gained_cars_bought = 0
         self._cr_spent = 0
         self._run_start_phase = "buy"

@@ -32,6 +32,7 @@ _COLUMNS = [
     "Super Wheelspins",
     "CR Gained",
     "XP",
+    "Challenges",
     "Bought Cars",
     "CR Spent",
 ]
@@ -87,6 +88,7 @@ class HistoryTabMixin:
                 str(rec.super_wheelspins) if rec.super_wheelspins else "",
                 f"{rec.cr_gained:,}" if rec.cr_gained else "",
                 f"{rec.xp_gained:,}",
+                str(rec.challenges_completed),
                 str(rec.cars_bought),
                 f"{rec.cr_spent:,}" if rec.cr_spent else "",
             ]
@@ -101,6 +103,7 @@ class HistoryTabMixin:
         total_super = sum(r.super_wheelspins for r in records)
         total_cr_gained = sum(r.cr_gained for r in records)
         total_xp = sum(r.xp_gained for r in records)
+        total_challenges = sum(r.challenges_completed for r in records)
         total_bought = sum(r.cars_bought for r in records)
         total_spent = sum(r.cr_spent for r in records)
         parts = [f"{len(records)} runs"]
@@ -111,6 +114,7 @@ class HistoryTabMixin:
         if total_cr_gained:
             parts.append(f"{total_cr_gained:,} CR gained")
         parts.append(f"{total_xp:,} XP")
+        parts.append(f"{total_challenges} challenges")
         parts.append(f"{total_bought} cars bought")
         if total_spent:
             parts.append(f"{total_spent:,} CR spent")

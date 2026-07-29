@@ -356,6 +356,27 @@ pytest --cov --cov-report=term-missing
 
 ## Known Behaviors (don't "fix" these back)
 
+- **`vision._winrt_ocr_async()` takes an optional `scale: float = 2.0`
+  upscale factor (2026-07-29); `vision._read_minimap_hud_text()` passes
+  `scale=3.0` instead of the default.** Field-confirmed dead zone: a real
+  farm run at a 2701x1563 (outer window) FH6 session logged "Drivable HUD
+  not detected... proceeding anyway" despite Anna/Link genuinely being on
+  screen the whole time — confirmed from a saved debug frame showing
+  clearly legible "ANNA"/"LINK" badges, not a crop-position miss. Re-running
+  WinRT OCR offline on that exact saved crop 5/5 times at the default 2x
+  upscale returned nothing at all every time; 5/5 times at 3x it read
+  `'LINK @ ANNA'` cleanly, and 1.5x/4x also worked — so this is WinRT's
+  recognizer being sensitive to specific pixel dimensions after the
+  upscale, not an OCR-quality or crop-position problem. Narrowing the crop
+  itself (to exclude the compass graphic above the badges) was tried first
+  and looked promising on one attempt, but a slightly different narrow-crop
+  size on the same frame went right back to failing 3/3 — ruling out "the
+  compass confuses it" as the cause, and ruling out crop-size tuning as a
+  reliable fix (a differently-sized crop can just relocate to a different
+  dead zone at some other window size later). `scale` defaults to 2.0
+  (unchanged from before this became tunable) for every other caller —
+  only override it where a dead zone is actually confirmed the same way, not
+  preemptively.
 - **`challenge._wait_for_drivable()` takes a keyword-only `settle_after: bool
   = False` (2026-07-29, corrected same day); `_wait_for_drivable_or_whats_next()`
   always settles.** Anna/Link render on the minimap ~2s before FH6 actually

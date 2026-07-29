@@ -32,6 +32,7 @@ class HistoryRecord:
     super_wheelspins: int
     cr_gained: int
     xp_gained: int
+    challenges_completed: int
     cars_bought: int
     cr_spent: int  # CR spent buying farm cars — NOT the same as cr_gained (a car's cr_reward payout)
 

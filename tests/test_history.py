@@ -17,6 +17,7 @@ def _make_record(**overrides):
         super_wheelspins=0,
         cr_gained=0,
         xp_gained=20000,
+        challenges_completed=8,
         cars_bought=2,
         cr_spent=730_000,
     )
@@ -72,6 +73,7 @@ def test_load_history_skips_malformed_entry(tmp_path):
                     "super_wheelspins": 0,
                     "cr_gained": 0,
                     "xp_gained": 10000,
+                    "challenges_completed": 4,
                     "cars_bought": 1,
                     "cr_spent": 365_000,
                 },

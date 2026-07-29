@@ -822,6 +822,7 @@ class FarmTabMixin:
         self._gained_wheelspins = 0
         self._gained_super_wheelspins = 0
         self._gained_cr = 0
+        self._gained_challenges = 0
         self._gained_cars_bought = 0
         self._cr_spent = 0
         self._gains_lbl.setText("")
@@ -931,6 +932,7 @@ class FarmTabMixin:
         self._gains_seen[key] = current
         if phase == "challenge":
             self._gained_xp += delta * _XP_PER_CHALLENGE
+            self._gained_challenges += delta
         elif phase == "buy":
             self._gained_cars_bought += delta
             self._cr_spent += delta * config.CFG.car.price_cr
@@ -940,7 +942,6 @@ class FarmTabMixin:
             self._gained_wheelspins += delta * car.wheelspins
             self._gained_super_wheelspins += delta * car.super_wheelspins
             self._gained_cr += delta * car.cr_reward
-            self._gained_cars_unlocked += delta
         self._update_gains_label()
 
     def _update_gains_label(self) -> None:
@@ -967,6 +968,7 @@ class FarmTabMixin:
             super_wheelspins=self._gained_super_wheelspins,
             cr_gained=self._gained_cr,
             xp_gained=self._gained_xp,
+            challenges_completed=self._gained_challenges,
             cars_bought=self._gained_cars_bought,
             cr_spent=self._cr_spent,
         )

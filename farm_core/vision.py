@@ -51,7 +51,15 @@ def _winrt_available() -> bool:
     return _winrt_ocr_ok
 
 
-async def _winrt_ocr_async(img_pil) -> str:
+async def _winrt_ocr_async(img_pil, scale: float = 2.0) -> str:
+    """`scale` is a tunable upscale factor, not just a resizing convenience —
+    WinRT's OCR engine has field-confirmed dead zones at specific pixel
+    dimensions where it returns nothing at all for a crop with clearly
+    legible text, and a different scale factor on the exact same crop reads
+    it cleanly (see _read_minimap_hud_text()'s comment for the field data).
+    Defaults to 2.0 (unchanged from before this became tunable) for every
+    caller that hasn't hit a dead zone; only override where one's confirmed.
+    """
     import cv2
     import numpy as np
     import winrt.windows.graphics.imaging as gi
@@ -64,7 +72,7 @@ async def _winrt_ocr_async(img_pil) -> str:
 
     img_bgr = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
     h, w = img_bgr.shape[:2]
-    img_up = cv2.resize(img_bgr, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+    img_up = cv2.resize(img_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
     h2, w2 = img_up.shape[:2]
     rgba = cv2.cvtColor(img_up, cv2.COLOR_BGR2RGBA)
 
@@ -467,7 +475,26 @@ WHATS_NEXT_KEYWORDS = {"SELECT", "BACK"}
 
 def _read_minimap_hud_text() -> str:
     """OCR the bottom-left 20%x20% corner of the window (minimap HUD labels).
-    Returns uppercase text ("" on error/no window)."""
+    Returns uppercase text ("" on error/no window).
+
+    Uses `scale=3` on the OCR call, not the default 2 (2026-07-29,
+    field-confirmed dead zone): a real farm run at a 2701x1563 (outer) FH6
+    window logged "Drivable HUD not detected... proceeding anyway" despite
+    Anna/Link genuinely being on screen the whole time (confirmed from a
+    saved debug frame — clearly legible "ANNA"/"LINK" badges, not a crop-
+    position miss). Re-running WinRT OCR offline on that exact saved crop
+    5/5 times at the default 2x upscale returned nothing at all every time;
+    5/5 times at 3x it read `'LINK @ ANNA'` cleanly. Narrowing the crop
+    itself (to exclude the compass graphic above the badges) was tried first
+    and looked promising, but a slightly different narrow-crop size on the
+    same frame went right back to failing 3/3 — confirming this isn't about
+    the compass being confusing content, it's WinRT's recognizer being
+    sensitive to specific pixel dimensions in a way that isn't predictable
+    from crop content alone, so tuning the scale (which shifted the dead
+    zone away entirely across a wide range: 1.5x/3x/4x all read it cleanly)
+    was the more robust fix over chasing a crop size that might just move
+    the same problem to a different window size later.
+    """
     if not _winrt_available():
         return ""
     win = _get_fh6_window_region()
@@ -479,7 +506,7 @@ def _read_minimap_hud_text() -> str:
     width = int(ww * 0.20)  # left 20%
     img = pyautogui.screenshot(region=(wx, wy + top, width, wh - top))
     try:
-        return asyncio.run(_winrt_ocr_async(img)).upper()
+        return asyncio.run(_winrt_ocr_async(img, scale=3.0)).upper()
     except Exception as exc:
         print(f"[WARN] OCR error (drivable HUD check): {exc}")
         return ""
