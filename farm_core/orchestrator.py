@@ -62,7 +62,7 @@ def _exit_remove_phase_to_game() -> None:
     keys.mp("escape", wait=CAR_LIST_EXIT_WAIT)  # Escape out of the car list (My Cars)
     keys.mp("escape")  # Escape out of the car menu to return to the game
     challenge._wait_for_drivable(
-        challenge.DRIVABLE_POLL_START_DELAY_SHORT, config.LOADING_EXIT_TO_GAME_WAIT, "remove exit"
+        challenge.DRIVABLE_POLL_START_DELAY_SHORT, config.LOADING_EXIT_TO_GAME_WAIT, "remove exit", settle_after=True
     )
     print("  Navigating back to main menu...")
     keys.mp("escape")  # Escape to open the Main Menu

@@ -267,6 +267,12 @@ class Settings:
     # optional convenience, not everyone wants an extra HUD element on top
     # of the game.
     show_ingame_overlay: bool
+    # Whether the user has dismissed the Farm tab's pre-flight window-size/
+    # resolution warning (farm_core.vision.check_window_size_ok(), shown from
+    # farm_ui.farm_tab._on_start) with "Don't show this again". Off by
+    # default — the warning is only advisory (Start Anyway is always an
+    # option) but should keep showing until the user actively opts out.
+    suppress_window_size_warning: bool
     # Whether the automatic buy/unlock/remove cycle should skip the Remove
     # step entirely (for users who'd rather keep or gift the cars themselves
     # — e.g. FH6's Gift Drop, which has no way to sort/filter down to just
@@ -330,6 +336,7 @@ def _default_settings() -> Settings:
         multiplier_car_configured=False,
         soko78_house_owned=False,
         show_ingame_overlay=False,
+        suppress_window_size_warning=False,
         skip_remove_in_cycle=False,
         timings=dict(TIMING_DEFAULTS),
     )
@@ -373,6 +380,7 @@ def load(path: pathlib.Path = SETTINGS_PATH) -> Settings:
         "multiplier_car_configured",
         "soko78_house_owned",
         "show_ingame_overlay",
+        "suppress_window_size_warning",
         "skip_remove_in_cycle",
     ):
         if field in data:

@@ -110,6 +110,91 @@ def _get_fh6_window_region() -> tuple[int, int, int, int] | None:
         return None
 
 
+def _get_fh6_client_size() -> tuple[int, int] | None:
+    """Return the FH6 window's actual renderable client area (width, height,
+    physical pixels) — excludes the title bar and borders that
+    _get_fh6_window_region()'s GetWindowRect includes. Needed specifically
+    for aspect-ratio checks: a windowed (non-fullscreen) game's OUTER window
+    rect is taller than its real internal resolution by the title bar's
+    height, which skews the ratio away from the game's actual setting.
+    Field-confirmed: a real 1024x768 windowed session measured client
+    2145x1609 physical (ratio 1.3331, ~exact 4:3) but outer window rect
+    1622x1256 (ratio 1.2914) — enough to miss check_window_size_ok()'s 4:3
+    check entirely. Returns None if the window can't be found.
+    """
+    try:
+        import ctypes
+
+        import pygetwindow as gw
+
+        wins = gw.getWindowsWithTitle("Forza Horizon 6")
+        if not wins:
+            return None
+        hwnd = wins[0]._hWnd
+
+        class _RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        rect = _RECT()
+        if not ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
+            return None
+        logical_sw = ctypes.windll.user32.GetSystemMetrics(0)
+        logical_sh = ctypes.windll.user32.GetSystemMetrics(1)
+        phys_sw, phys_sh = pyautogui.size()
+        sx = phys_sw / logical_sw if logical_sw else 1.0
+        sy = phys_sh / logical_sh if logical_sh else 1.0
+        return (int((rect.right - rect.left) * sx), int((rect.bottom - rect.top) * sy))
+    except Exception as exc:
+        print(f"[WARN] FH6 client size lookup failed: {exc}")
+        return None
+
+
+def check_window_size_ok() -> str | None:
+    """Advisory pre-flight check for the one FH6 window trait actually backed
+    by solid field data (Guide tab's Timings page / README's resolution note):
+    4:3 resolutions test unreliably for skill-point OCR at every size tried.
+    Returns a warning message if the window looks 4:3, or None if the window
+    can't be found (a separate, already-handled case) or looks fine.
+
+    Deliberately does NOT also flag a "small" window by comparing its height
+    to the monitor's — field-tested, dropped: on a large/high-res monitor, a
+    perfectly good windowed size (e.g. 2528x1466, ~68% of a 4K monitor's
+    height) still falls well short of that monitor's own height, producing a
+    false positive with no reliable absolute-pixel threshold to fall back on
+    (the only two real data points, ~1185px tall = bad and ~1620px tall =
+    fine, don't pin one down). The Guide tab's qualitative "prefer fullscreen
+    or a large window" text still covers this, just not as a blocking check.
+    """
+    region = _get_fh6_window_region()
+    if region is None:
+        return None
+    _left, _top, width, height = region
+    # A minimized window reports a tiny/garbage size (Windows moves it to
+    # -32000,-32000 with a near-zero width/height) — field-confirmed via this
+    # exact check returning (237, 39) for a minimized FH6. This check runs the
+    # instant Start is clicked, before the "switch to game" countdown, so FH6
+    # being minimized/not-yet-focused at that moment is normal, not small.
+    if width < 100 or height < 100:
+        return None
+
+    # Use the client (render) area for the ratio, not the outer window rect
+    # above — see _get_fh6_client_size()'s comment. Falls back to the outer
+    # rect if the client-rect lookup itself fails for any reason.
+    client_size = _get_fh6_client_size()
+    check_w, check_h = client_size if client_size else (width, height)
+    if abs(check_w / check_h - 4 / 3) < 0.02:
+        return (
+            "4:3 resolutions (e.g. 1024x768) have tested unreliably for skill-point OCR in both "
+            "windowed and fullscreen — avoid that regardless of window size."
+        )
+    return None
+
+
 def _get_display_dpr() -> float:
     """Device pixel ratio for the primary monitor (e.g. 1.5 for 150% scaling).
 

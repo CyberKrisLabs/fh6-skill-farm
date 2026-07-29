@@ -356,6 +356,59 @@ pytest --cov --cov-report=term-missing
 
 ## Known Behaviors (don't "fix" these back)
 
+- **`challenge._wait_for_drivable()` takes a keyword-only `settle_after: bool
+  = False` (2026-07-29, corrected same day); `_wait_for_drivable_or_whats_next()`
+  always settles.** Anna/Link render on the minimap ~2s before FH6 actually
+  starts accepting input again — but what that costs depends on what kind of
+  input follows, not whether it's held vs. tapped. W is continuous throttle:
+  if the first instant of it doesn't register, the car just starts
+  accelerating a beat late — harmless, self-correcting. An Escape into a
+  menu is a discrete state transition: if THAT press is dropped (the game
+  just never registered it, no error/log to show for it), the code's
+  assumption "I'm now in menu X" is simply wrong, and every subsequent press
+  in the sequence fires at the wrong screen, desyncing the whole flow. So
+  `settle_after=True` (sleeps `DRIVABLE_SETTLE_WAIT`, 1.5s, right after HUD
+  detection) is only passed by the two call sites about to fire a
+  menu-opening Escape — the "What's Next" back-out inside
+  `run_challenge_iteration()`, and `orchestrator._exit_remove_phase_to_game()`'s
+  remove→Free Roam wait — not by challenge load or any of the three
+  challenge retry call sites, whose next action is just the next race's
+  throttle. An earlier version of this fix applied the settle unconditionally
+  to every caller (citing "the retry loop's next W-hold" as also observed
+  dropping, and reasoning that a held key "survives" the window) — both
+  field-corrected the same day: the actual distinction is what a dropped
+  input costs (self-correcting throttle vs. a wrongly-assumed menu state),
+  not hold-duration, and the broad application was unnecessary and was
+  costing ~1.5s on every single challenge iteration (real, since a cycle can
+  run 90+ challenges). `_wait_for_drivable_or_whats_next()` has no such
+  parameter since both of its outcomes always lead straight into a
+  menu-opening key press from the caller. Deliberately NOT added to the
+  give-up/timeout path either way — that path already burned the full
+  `max_seconds` polling and finding nothing, so there's no reason to believe
+  waiting a bit more first would help before proceeding anyway.
+- **The Setup Wizard's "Find Automatically" (both steps) clears
+  `keys._stop_event` right before a search commits to running
+  (2026-07-29 fix), same spot as `_clear_cc_auto_find`/
+  `_clear_filter_auto_find`.** `keys._stop_event` is a module-level global,
+  and historically only `farm_tab._on_start()` (and `cli.py`) ever cleared
+  it — Stop (Farm tab) or any `keys.mp()` call that itself detects FH6 lost
+  focus both `.set()` it, and NOTHING un-set it again except starting the
+  main farm. Since it's checked first-thing in every `mp()` call, once set
+  it silently no-ops every future key press anywhere in the app, forever,
+  until the farm is (re)started. Field-confirmed (2026-07-29): after
+  clicking Stop on the Farm tab once, or after a wizard search that itself
+  briefly lost focus, EVERY subsequent "Find Automatically" attempt failed
+  near-instantly with `car_collection_finder`/`multiplier_filter_finder`'s
+  `_SearchAborted("... lost FH6 focus ...")` — even though the Wizard's own
+  pre-search `keys._fh6_focused()` check (5s countdown) correctly reported
+  FH6 as focused, since that check doesn't consult `_stop_event` at all. The
+  giveaway that this was stale global state, not a real focus bug: restarting
+  the app always fixed it (fresh `threading.Event()`), and the main farm
+  itself was never affected (it always clears the event on its own Start).
+  If a similar "works once, breaks forever until restart" report comes in
+  for some other feature that calls into `keys.mp()`/`_press_key()`, check
+  first whether that entry point ever clears `_stop_event` before assuming
+  it's a fresh bug.
 - **`vision._read_car_screen_buttons()` OCRs the button bar in 4 overlapping
   horizontal slices (2026-07-27), not one pass over the full window width.**
   Field-confirmed via debug screenshots: WinRT OCR silently drops whole
@@ -630,6 +683,39 @@ pytest --cov --cov-report=term-missing
   breakdown, unchanged. Applies to both `_challenge_lbl` (Main/Challenge
   start) and the unlock/remove branch's `challenge_tag` (including the OCR-
   adjusted variant).
+
+---
+
+## Deferred / Future Work
+
+- **`vision._read_available_sp()`'s tight crop (`SP_ROW_TOP_FRAC=0.843`,
+  `SP_ROW_HEIGHT_FRAC=0.047`) misses the "Available Points" row entirely at
+  4:3 aspect ratios — not just noisily, completely empty OCR output — while
+  the identical crop reads correctly at 16:9 (2026-07-29 field test, not yet
+  fixed).** Tested live: FH6 windowed at 1600x1200 (4:3) with the skill tree
+  open — the tight crop's OCR returned `''` (nothing), while a wider crop
+  (bottom 25% of the window) found the text further down:
+  `'227 0 Back ESC - Available Points Unlock All'` (227 = the real Available
+  Points value, "0" the usual icon-fused-as-a-digit quirk). Switching the
+  *exact same window* to 1600x900 (16:9), same skill tree screen, and the
+  existing tight crop read `227` correctly on the first try — isolating the
+  cause to aspect ratio, not window size/resolution/DPI/OCR noise. This
+  suggests the skill-tree panel sits at a genuinely different vertical
+  position (as a fraction of window height) at 4:3 vs. the 16:9-ish aspect
+  `SP_ROW_TOP_FRAC`/`SP_ROW_HEIGHT_FRAC` were originally pixel-measured
+  from — a real layout difference, not just fewer/noisier pixels. This is a
+  second, independent reason 4:3 is unreliable, on top of whatever OCR-
+  quality factors already motivate `vision.check_window_size_ok()`'s 4:3
+  warning (see its own comment). **Not fixed deliberately**: 4:3 is already
+  actively discouraged (the pre-flight warning tells users to avoid it
+  entirely), so tuning crop percentages for a resolution the tool tells
+  people not to use wasn't prioritized. If 4:3 support is ever wanted: field-
+  measure the actual Available Points row position at a 4:3 aspect
+  specifically (same methodology as the original `SP_ROW_TOP_FRAC`/
+  `SP_ROW_HEIGHT_FRAC` derivation — see that function's own docstring/history
+  above), then branch the crop fractions by aspect ratio (`_get_fh6_client_size()`
+  already gives an accurate width/height to compute the aspect from) instead
+  of assuming one fixed layout works everywhere.
 
 ---
 

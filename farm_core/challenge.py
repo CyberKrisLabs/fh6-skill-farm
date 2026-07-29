@@ -96,14 +96,33 @@ DRIVABLE_POLL_START_DELAY_MEDIUM = 15
 DRIVABLE_POLL_START_DELAY_LONG = 20
 DRIVABLE_POLL_INTERVAL = 1  # poll cadence once polling starts
 
+# Field-confirmed (2026-07-29): Anna/Link render on the minimap HUD ~2s
+# before the game actually starts accepting input again. What that costs
+# depends on what kind of input follows, not whether it's held vs tapped: W
+# is continuous throttle — if the first instant of it doesn't register, the
+# car just starts accelerating a beat late, which is harmless and
+# self-correcting. An Escape into a menu is a discrete state transition —
+# if THAT press is dropped, the code's assumption "I'm now in menu X" is
+# simply wrong, and every subsequent press in the sequence fires at the
+# wrong screen, desyncing the whole flow. So `settle_after=True` (this
+# settle sleep) is only passed by callers about to fire a menu-opening
+# Escape — buy.transition_to_buy's opening Escape,
+# orchestrator._exit_remove_phase_to_game's Escape to the Main Menu — not by
+# challenge load or any challenge retry, whose next action is just the next
+# race's throttle.
+DRIVABLE_SETTLE_WAIT = 1.5
 
-def _wait_for_drivable(settle: float, max_seconds: float, warn_label: str) -> None:
+
+def _wait_for_drivable(settle: float, max_seconds: float, warn_label: str, *, settle_after: bool = False) -> None:
     """Poll for the minimap HUD (vision.DRIVABLE_HUD_KEYWORDS) confirming the
     car is drivable, instead of a blind fixed wait. Settles `settle` seconds
     first (loading can't plausibly finish before then; clamped to
     `max_seconds` in case a user has tuned that call site's Timings-tab
     value below the settle), then polls every DRIVABLE_POLL_INTERVAL up to
-    `max_seconds` before giving up and proceeding anyway.
+    `max_seconds` before giving up and proceeding anyway. On detection, also
+    waits DRIVABLE_SETTLE_WAIT before returning if `settle_after` — pass this
+    only when the caller's very next action is a menu-opening key press, not
+    a continuous control like throttle (see DRIVABLE_SETTLE_WAIT's comment).
     """
     settle = min(settle, max_seconds)
     keys._sleep(settle)
@@ -112,6 +131,8 @@ def _wait_for_drivable(settle: float, max_seconds: float, warn_label: str) -> No
     elapsed = settle
     while elapsed < max_seconds:
         if any(kw in vision._read_minimap_hud_text() for kw in vision.DRIVABLE_HUD_KEYWORDS):
+            if settle_after:
+                keys._sleep(DRIVABLE_SETTLE_WAIT)
             return
         keys._sleep(DRIVABLE_POLL_INTERVAL)
         elapsed += DRIVABLE_POLL_INTERVAL
@@ -126,7 +147,9 @@ def _wait_for_drivable_or_whats_next(settle: float, max_seconds: float) -> bool:
     vision.WHATS_NEXT_KEYWORDS). Returns True if "What's Next" was detected
     (caller should back out of it), False otherwise — including the give-up
     case, since landing directly in Free Roam is the far more common outcome
-    ("What's Next" is an opt-in game setting).
+    ("What's Next" is an opt-in game setting). Waits DRIVABLE_SETTLE_WAIT
+    before returning on either detected outcome — see its comment; both
+    outcomes lead straight into a key press from the caller.
     """
     settle = min(settle, max_seconds)
     keys._sleep(settle)
@@ -135,8 +158,10 @@ def _wait_for_drivable_or_whats_next(settle: float, max_seconds: float) -> bool:
     elapsed = settle
     while elapsed < max_seconds:
         if any(kw in vision._read_minimap_hud_text() for kw in vision.DRIVABLE_HUD_KEYWORDS):
+            keys._sleep(DRIVABLE_SETTLE_WAIT)
             return False
         if all(kw in vision._read_car_screen_buttons() for kw in vision.WHATS_NEXT_KEYWORDS):
+            keys._sleep(DRIVABLE_SETTLE_WAIT)
             return True
         keys._sleep(DRIVABLE_POLL_INTERVAL)
         elapsed += DRIVABLE_POLL_INTERVAL
@@ -266,7 +291,9 @@ def run_challenge_iteration(final: bool = False, label: str = "") -> bool:
                 return False
             keys.mp("down", wait=config.NAV_WAIT)  # navigate to "No" (only matters if the nag prompt appeared)
             keys._press_key("enter")  # dismiss "Change What's Next?" via No
-            _wait_for_drivable(DRIVABLE_POLL_START_DELAY_SHORT, WHATS_NEXT_EXIT_WAIT, "what's next exit")
+            _wait_for_drivable(
+                DRIVABLE_POLL_START_DELAY_SHORT, WHATS_NEXT_EXIT_WAIT, "what's next exit", settle_after=True
+            )
     else:
         keys._press_key("escape")  # Retry (on-time screen) — SP granted, reloads into the next run
         _wait_for_drivable(DRIVABLE_POLL_START_DELAY_LONG, config.LOADING_RETRY_WAIT, "retry")

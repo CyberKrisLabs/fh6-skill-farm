@@ -42,3 +42,18 @@ def test_buffered_passthrough_when_disabled(monkeypatch):
 def test_buffered_zero_is_unaffected(monkeypatch):
     monkeypatch.setattr(config, "BUFFER_ENABLED", True)
     assert config._buffered(0) == 0
+
+
+@pytest.mark.parametrize(
+    ("cars_unlocked", "expected_challenges"),
+    [
+        (0, 0),
+        (1, 3),  # ceil(1 * 30 / 10) = 3
+        (3, 9),  # exact multiple
+        (4, 12),
+    ],
+)
+def test_challenges_to_refill(monkeypatch, cars_unlocked, expected_challenges):
+    monkeypatch.setattr(config, "SKILL_POINTS_PER_CAR", 30)
+    monkeypatch.setattr(config, "POINTS_PER_CHALLENGE", 10)
+    assert config.challenges_to_refill(cars_unlocked) == expected_challenges

@@ -548,6 +548,19 @@ class SetupWizardDialog(QDialog):
             return
         self._find_status_label.setText("Searching...")
         self._clear_cc_auto_find()
+        # A prior Farm Stop (or a prior search that itself lost focus
+        # momentarily) leaves this set — see the identical comment on
+        # keys.mp() itself. Only farm_tab._on_start() and the CLI ever
+        # cleared it before now, so the Wizard's OWN "FH6 is focused" check
+        # right above this line could pass while every keys.mp() call the
+        # search makes still silently no-ops on its very first iteration
+        # (car_collection_finder._press/_burst_press then immediately raise
+        # _SearchAborted("... lost FH6 focus ...") from that stale state,
+        # not a real new focus loss) — field-confirmed 2026-07-29: this made
+        # every Find Automatically attempt after the first real Stop (Farm
+        # tab, or an earlier search that itself tripped this) fail instantly
+        # with a focus-sounding error even though FH6 genuinely was focused.
+        keys._stop_event.clear()
         self._search_overlay = FinderStatusOverlay()
         thread = threading.Thread(target=self._run_find_thread, args=(self._find_target,), daemon=True)
         thread.start()
@@ -738,6 +751,9 @@ class SetupWizardDialog(QDialog):
             return
         self._filter_find_status_label.setText("Searching...")
         self._clear_filter_auto_find()
+        # See the identical comment in _find_countdown_tick above — same bug,
+        # same fix, for Step 2's search.
+        keys._stop_event.clear()
         self._search_overlay = FinderStatusOverlay()
         thread = threading.Thread(target=self._run_find_filter_thread, args=(self._filter_find_target,), daemon=True)
         thread.start()

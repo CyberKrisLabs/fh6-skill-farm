@@ -16,6 +16,7 @@ from _version import __version__
 from farm_ui import theme
 from farm_ui.farm_tab import FarmTabMixin
 from farm_ui.guide_tab import GuideTabMixin
+from farm_ui.history_tab import HistoryTabMixin
 from farm_ui.info_tab import InfoTabMixin, _update_bridge
 from farm_ui.paths import resource_path
 from farm_ui.settings_tab import SettingsTabMixin
@@ -47,7 +48,9 @@ QListWidget::item:hover:!selected {
 """
 
 
-class SkillFarmWindow(QMainWindow, FarmTabMixin, SettingsTabMixin, TimingsTabMixin, GuideTabMixin, InfoTabMixin):
+class SkillFarmWindow(
+    QMainWindow, FarmTabMixin, SettingsTabMixin, TimingsTabMixin, HistoryTabMixin, GuideTabMixin, InfoTabMixin
+):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(f"FH6 Skill Farm v{__version__}")
@@ -80,6 +83,9 @@ class SkillFarmWindow(QMainWindow, FarmTabMixin, SettingsTabMixin, TimingsTabMix
         self._gained_wheelspins = 0
         self._gained_super_wheelspins = 0
         self._gained_cr = 0
+        self._gained_cars_bought = 0
+        self._cr_spent = 0
+        self._run_start_phase = "buy"
 
         self._build_ui()
         self._update_fields()
@@ -94,6 +100,7 @@ class SkillFarmWindow(QMainWindow, FarmTabMixin, SettingsTabMixin, TimingsTabMix
             (self._build_farm_tab(), "Farm"),
             (self._build_settings_tab(), "Settings"),
             (self._build_timings_tab(), "Timings"),
+            (self._build_history_tab(), "History"),
             (self._build_guide_tab(), "Guide"),
             (self._build_info_tab(), "Info"),
         ]

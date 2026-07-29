@@ -1,5 +1,6 @@
 """Farm tab: Start From / Options / Summary / Start-Stop / Log."""
 
+import datetime
 import math
 import sys
 import threading
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 import farm_settings
-from farm_core import config, keys, orchestrator, vision
+from farm_core import config, history, keys, orchestrator, vision
 from farm_ui.guide_content import START_FROM_INFO as _START_FROM_INFO
 from farm_ui.overlay import IngameOverlay
 from farm_ui.widgets import _CRSpinBox, _fixed_label, _info_button, _log_bridge, _sep, _small, _StdoutCapture
@@ -740,6 +741,26 @@ class FarmTabMixin:
                 if dlg.clickedButton() == wizard_btn:
                     self._open_setup_wizard()
                 return
+        if not config.CFG.suppress_window_size_warning:
+            warning = vision.check_window_size_ok()
+            if warning:
+                dlg = QMessageBox(self)
+                dlg.setWindowTitle("FH6 window may cause OCR misreads")
+                dlg.setIcon(QMessageBox.Icon.Warning)
+                dlg.setText(
+                    warning + "\n\nSkill-point detection may misread and trigger extra retries, "
+                    "but the farm keeps running either way — you can start anyway."
+                )
+                dont_show_chk = QCheckBox("Don't show this again")
+                dlg.setCheckBox(dont_show_chk)
+                start_btn = dlg.addButton("Start Anyway", QMessageBox.ButtonRole.AcceptRole)
+                dlg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                dlg.exec()
+                if dont_show_chk.isChecked():
+                    config.CFG.suppress_window_size_warning = True
+                    farm_settings.save(config.CFG)
+                if dlg.clickedButton() != start_btn:
+                    return
         keys._stop_event.clear()
         self._ocr_challenge_override = None
         self._log.clear()
@@ -762,6 +783,7 @@ class FarmTabMixin:
 
     def _launch(self) -> None:
         phase = self._phase()
+        self._run_start_phase = phase
         sp = self._sp_spin.value()
         cr = self._cr_spin.value()
         cars = self._cars_spin.value() if phase in ("buy", "unlock", "remove") else 0
@@ -800,6 +822,8 @@ class FarmTabMixin:
         self._gained_wheelspins = 0
         self._gained_super_wheelspins = 0
         self._gained_cr = 0
+        self._gained_cars_bought = 0
+        self._cr_spent = 0
         self._gains_lbl.setText("")
         self._farm_thread = threading.Thread(target=_run, daemon=True)
         self._farm_thread.start()
@@ -897,7 +921,7 @@ class FarmTabMixin:
         only crediting a strictly-increasing value sidesteps that: a retry
         repeats the same current and is ignored, a real advance is new.
         """
-        if phase not in ("challenge", "unlock"):
+        if phase not in ("challenge", "unlock", "buy"):
             return
         key = (phase, cycle)
         last = self._gains_seen.get(key, 0)
@@ -907,12 +931,16 @@ class FarmTabMixin:
         self._gains_seen[key] = current
         if phase == "challenge":
             self._gained_xp += delta * _XP_PER_CHALLENGE
+        elif phase == "buy":
+            self._gained_cars_bought += delta
+            self._cr_spent += delta * config.CFG.car.price_cr
         else:
             car = config.CFG.car
             self._gained_xp += delta * car.sp_to_unlock * _XP_PER_SP_UNLOCK
             self._gained_wheelspins += delta * car.wheelspins
             self._gained_super_wheelspins += delta * car.super_wheelspins
             self._gained_cr += delta * car.cr_reward
+            self._gained_cars_unlocked += delta
         self._update_gains_label()
 
     def _update_gains_label(self) -> None:
@@ -926,6 +954,25 @@ class FarmTabMixin:
         parts.append(f"{self._gained_xp:,} XP")
         self._gains_lbl.setText("  ·  ".join(parts))
 
+    def _record_history(self) -> None:
+        """Append this run's totals to history.json (natural completion or
+        after Stop both funnel through the "\x00DONE" sentinel that calls
+        this) and refresh the History tab if it's already been built."""
+        record = history.HistoryRecord(
+            timestamp=datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+            duration_seconds=self._elapsed_seconds,
+            car_name=config.CFG.car.name,
+            start_phase=getattr(self, "_run_start_phase", "buy"),
+            wheelspins=self._gained_wheelspins,
+            super_wheelspins=self._gained_super_wheelspins,
+            cr_gained=self._gained_cr,
+            xp_gained=self._gained_xp,
+            cars_bought=self._gained_cars_bought,
+            cr_spent=self._cr_spent,
+        )
+        history.append_record(record)
+        self._refresh_history_tab()
+
     def _on_log(self, text: str) -> None:
         if text == "\x00DONE":
             self._elapsed_timer.stop()
@@ -933,6 +980,7 @@ class FarmTabMixin:
             self._stop_btn.setEnabled(False)
             self._set_controls(True)
             self._status.setText("Done.")
+            self._record_history()
             return
 
         if text.startswith("Phase:"):
