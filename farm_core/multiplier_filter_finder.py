@@ -122,6 +122,12 @@ _MATCH_CONFIDENCE = 0.85  # scores observed: correct matches 0.96-1.00, one fals
 MAX_CAR_TYPE_BURSTS = 40
 CAR_TYPE_BURST = 8  # one-row overlap out of ~9-10 rows usably visible under the header
 
+PERF_CLASS_MAX_BURSTS = 8  # Performance Class is a short, fixed-length section (at most 8
+# letters) compared to Car Type's dozens of possible categories — nowhere near
+# MAX_CAR_TYPE_BURSTS=40 is needed to sweep it, even with a couple of extra rows (e.g. a
+# season's Snow Tyres filters, see _find_performance_class_row's docstring) pushing it
+# further down than a single screen shows.
+
 EMPTY_READ_RETRIES = 2  # extra attempts to re-read the SAME position before giving up and
 # pressing forward blindly. Field-confirmed (2026-07-27): an empty OCR read (a transient miss,
 # not the end of the list — the very next burst read normal content again) used to fall straight
@@ -428,85 +434,152 @@ def _find_performance_class_row(target_letter: str, log: Callable[[str], None]) 
     """Moves the cursor onto the target Performance Class row via template
     matching. Returns the recorded [key, count] sequence (empty if the
     cursor was already there). Does not press Enter — the caller decides
-    when to check the box."""
-    lines, screen_bgr, highlight = _read_screen()
-    positions = _line_positions(lines)
-    log(f"  [performance_class] OCR lines: {[(p['text'], round(p['yc'])) for p in positions]}")
-    log(f"  [performance_class] highlight box: {highlight}")
-    pc_header = _header_y(positions, "Performance Class")
-    if pc_header is None:
-        raise _SearchAborted("'Performance Class' header not found on screen — is My Cars' Filter list open?")
-    ct_header = _header_y(positions, "Car Type")
-    row_height = _estimate_row_height(positions)
-    log(f"  [performance_class] pc_header={pc_header} ct_header={ct_header} row_height={row_height:.1f}")
+    when to check the box.
 
-    section_top = pc_header[1]  # header's bottom edge = top of its first entry
-    # Fallback bound (when "Car Type" header isn't visible on this particular read) is the real
-    # known max — PERFORMANCE_CLASSES has exactly 8 entries — not an arbitrary guess, and tighter
-    # than the +1 buffer might suggest is needed; kept +1 purely for row-height measurement slop.
-    section_bottom = (
-        ct_header[0] if ct_header is not None else section_top + row_height * (len(PERFORMANCE_CLASSES) + 1)
-    )
+    Bursts down (same burst size as _find_car_type_row — it's the same
+    scrollable list, same row height) whenever the target letter isn't
+    visible in the current viewport, instead of giving up after a single
+    read. Added 2026-07-30: FH6's seasonal filter rows (winter adds "Snow
+    Tyres Fitted"/"Snow Tyres Not Fitted" above Performance Class) can push
+    this section low enough that the very first screen no longer shows
+    every letter — confirmed in the field as a search for 'X' (the last,
+    lowest class) failing outright instead of scrolling to look further,
+    something _find_car_type_row already did correctly for its own section.
+    On a screen where the whole section fits in one read (no extra rows,
+    or a class near the top), this still matches on the very first
+    iteration with zero bursts pressed — unchanged from before.
+    """
+    sequence = []
+    previous_texts = None
+    for burst_i in range(PERF_CLASS_MAX_BURSTS):
+        lines, screen_bgr, highlight = _read_screen()
+        positions = _line_positions(lines)
+        current_texts = [p["text"] for p in positions]
+        for retry in range(EMPTY_READ_RETRIES):
+            if current_texts:
+                break
+            log(
+                f"  [performance_class] burst {burst_i}: empty OCR read — retrying same position "
+                f"({retry + 1}/{EMPTY_READ_RETRIES})..."
+            )
+            keys._sleep(EMPTY_READ_RETRY_WAIT)
+            lines, screen_bgr, highlight = _read_screen()
+            positions = _line_positions(lines)
+            current_texts = [p["text"] for p in positions]
+        log(f"  [performance_class] burst {burst_i}: OCR lines: {[(p['text'], round(p['yc'])) for p in positions]}")
+        log(f"  [performance_class] highlight box: {highlight}")
+        # Same "screen stopped changing" stuck-detection as _find_car_type_row — if two
+        # consecutive non-empty reads are identical, the last burst had no effect (genuinely
+        # reached the bottom of the scrollable list), not just a bad frame.
+        if current_texts and current_texts == previous_texts:
+            raise _SearchAborted(
+                f"Reached the end of the list without finding Performance Class {target_letter!r} "
+                f"(screen stopped changing after burst {burst_i - 1}) — giving up."
+            )
+        previous_texts = current_texts
 
-    # Crop horizontally to where this screen's list text actually renders (plus a generous
-    # margin), not the full window width — the Performance Class letter shares that same
-    # column across every row (same as every Car Type label), so this is a safe, "free"
-    # narrowing of the search area rather than a guess at the letter's specific position.
-    x_range = _text_x_range(lines)
-    img_w = screen_bgr.shape[1]
-    if x_range is not None:
-        x0, x1 = x_range
-        margin = (x1 - x0) * 0.3
-        x_lo, x_hi = max(0, int(x0 - margin)), min(img_w, int(x1 + margin))
-    else:
-        x_lo, x_hi = 0, img_w
-    log(f"  [performance_class] horizontal search crop: [{x_lo}, {x_hi}] of {img_w}px window width")
+        pc_header = _header_y(positions, "Performance Class")
+        ct_header = _header_y(positions, "Car Type")
+        if burst_i == 0 and pc_header is None:
+            raise _SearchAborted("'Performance Class' header not found on screen — is My Cars' Filter list open?")
+        row_height = _estimate_row_height(positions)
 
-    crop = screen_bgr[int(section_top) : int(section_bottom), x_lo:x_hi]
-    if crop.shape[0] < 5:
-        raise _SearchAborted("Performance Class section appears empty — nothing to search.")
-
-    cursor_y = _current_cursor_y(highlight, positions)
-    exclude = None
-    if cursor_y is not None and section_top <= cursor_y <= section_bottom:
-        exclude = (cursor_y - section_top - row_height * 0.5, cursor_y - section_top + row_height * 0.5)
-
-    template = _load_template(target_letter.upper())
-    score, box = _match_template_multiscale(crop, template, exclude)
-    if box is not None:
-        log(f"  [performance_class] best match for {target_letter!r}: score={score:.3f} box_x={x_lo + box[0]}")
-    else:
-        log(f"  [performance_class] best match for {target_letter!r}: score={score:.3f}")
-    if score < _MATCH_CONFIDENCE:
-        raise _SearchAborted(
-            f"Performance Class {target_letter!r} not found (best score {score:.3f}) — "
-            "may not be present in this account's filter list."
+        if pc_header is not None:
+            section_top = pc_header[1]  # header's bottom edge = top of its first entry
+        else:
+            section_top = 0  # header has scrolled off the top of the viewport already
+        if ct_header is not None:
+            section_bottom = ct_header[0]
+        elif pc_header is not None:
+            # Fallback bound (neither "Car Type" nor a scrolled-off header) is the real known
+            # max — PERFORMANCE_CLASSES has exactly 8 entries — not an arbitrary guess, and
+            # tighter than the +1 buffer might suggest is needed; kept +1 purely for
+            # row-height measurement slop.
+            section_bottom = section_top + row_height * (len(PERFORMANCE_CLASSES) + 1)
+        else:
+            section_bottom = screen_bgr.shape[0]
+        log(
+            f"  [performance_class] burst {burst_i}: pc_header={pc_header} ct_header={ct_header} row_height={row_height:.1f}"
         )
-    _, by, _, bh = box
-    target_yc = section_top + by + bh / 2
 
-    cursor_source = "highlight"
-    if cursor_y is None:
-        cursor_source = "fallback:first_selectable"
-        cursor_y = _first_selectable_y(positions)
-        if cursor_y is None:
-            cursor_source = "fallback:section_top"
-            cursor_y = section_top
+        # Crop horizontally to where this screen's list text actually renders (plus a generous
+        # margin), not the full window width — the Performance Class letter shares that same
+        # column across every row (same as every Car Type label), so this is a safe, "free"
+        # narrowing of the search area rather than a guess at the letter's specific position.
+        x_range = _text_x_range(lines)
+        img_w = screen_bgr.shape[1]
+        if x_range is not None:
+            x0, x1 = x_range
+            margin = (x1 - x0) * 0.3
+            x_lo, x_hi = max(0, int(x0 - margin)), min(img_w, int(x1 + margin))
+        else:
+            x_lo, x_hi = 0, img_w
+        log(
+            f"  [performance_class] burst {burst_i}: search crop y=[{section_top:.0f}, {section_bottom:.0f}] "
+            f"x=[{x_lo}, {x_hi}] of {img_w}px window width"
+        )
 
-    header_ys = [h[0] + (h[1] - h[0]) / 2 for h in (pc_header, ct_header) if h is not None]
-    raw_steps = round((target_yc - cursor_y) / row_height)
-    headers_between = sum(1 for hy in header_ys if min(cursor_y, target_yc) < hy < max(cursor_y, target_yc))
-    log(
-        f"  [performance_class] cursor_y={cursor_y:.1f} (source={cursor_source}) target_yc={target_yc:.1f} "
-        f"raw_steps={raw_steps} headers_between={headers_between} header_ys={[round(h) for h in header_ys]}"
+        crop = screen_bgr[int(section_top) : int(section_bottom), x_lo:x_hi]
+        if crop.shape[0] < 5:
+            raise _SearchAborted("Performance Class section appears empty — nothing to search.")
+
+        cursor_y = _current_cursor_y(highlight, positions)
+        exclude = None
+        if cursor_y is not None and section_top <= cursor_y <= section_bottom:
+            exclude = (cursor_y - section_top - row_height * 0.5, cursor_y - section_top + row_height * 0.5)
+
+        template = _load_template(target_letter.upper())
+        score, box = _match_template_multiscale(crop, template, exclude)
+        if box is not None:
+            log(
+                f"  [performance_class] burst {burst_i}: best match for {target_letter!r}: "
+                f"score={score:.3f} box_x={x_lo + box[0]}"
+            )
+        else:
+            log(f"  [performance_class] burst {burst_i}: best match for {target_letter!r}: score={score:.3f}")
+
+        if score >= _MATCH_CONFIDENCE:
+            _, by, _, bh = box
+            target_yc = section_top + by + bh / 2
+
+            cursor_source = "highlight"
+            if cursor_y is None:
+                cursor_source = "fallback:first_selectable"
+                cursor_y = _first_selectable_y(positions)
+                if cursor_y is None:
+                    cursor_source = "fallback:section_top"
+                    cursor_y = section_top
+
+            header_ys = [h[0] + (h[1] - h[0]) / 2 for h in (pc_header, ct_header) if h is not None]
+            raw_steps = round((target_yc - cursor_y) / row_height)
+            headers_between = sum(1 for hy in header_ys if min(cursor_y, target_yc) < hy < max(cursor_y, target_yc))
+            log(
+                f"  [performance_class] cursor_y={cursor_y:.1f} (source={cursor_source}) target_yc={target_yc:.1f} "
+                f"raw_steps={raw_steps} headers_between={headers_between} header_ys={[round(h) for h in header_ys]}"
+            )
+            delta = _press_delta_between(cursor_y, target_yc, row_height, header_ys)
+            log(f"  [performance_class] moving {delta:+d} row(s) to reach {target_letter!r}")
+            if delta == 0:
+                return sequence
+            key = "down" if delta > 0 else "up"
+            _press(key, abs(delta))
+            sequence.append([key, abs(delta)])
+            return sequence
+
+        # Not found in the current viewport. If we've already scrolled past the entire section
+        # (Car Type's header now visible, Performance Class's no longer is) there's nowhere left
+        # to look — the section only ever lists classes the account owns at least one car in
+        # (see module docstring), so this class genuinely isn't present, not just off-screen.
+        if ct_header is not None and pc_header is None:
+            raise _SearchAborted(
+                f"Performance Class {target_letter!r} not found (best score {score:.3f}) — "
+                "may not be present in this account's filter list."
+            )
+        _burst_press("down", CAR_TYPE_BURST)
+        sequence.append(["down", CAR_TYPE_BURST])
+    raise _SearchAborted(
+        f"Performance Class {target_letter!r} not found after {PERF_CLASS_MAX_BURSTS} bursts — giving up."
     )
-    delta = _press_delta_between(cursor_y, target_yc, row_height, header_ys)
-    log(f"  [performance_class] moving {delta:+d} row(s) to reach {target_letter!r}")
-    if delta == 0:
-        return []
-    key = "down" if delta > 0 else "up"
-    _press(key, abs(delta))
-    return [[key, abs(delta)]]
 
 
 def _find_car_type_row(target_name: str, log: Callable[[str], None]) -> list:

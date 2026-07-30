@@ -50,7 +50,11 @@ WIZARD_STEPS: dict[str, dict] = {
             "In the My Cars list, press Y to open Filter, then find your 9x "
             "multiplier car's Performance Class and Car Type in the checkbox "
             "list and check both. Enter how far down the filter list each one "
-            "is, counted from the very top."
+            "is, counted from the very top.\n\n"
+            "Note: FH6's seasonal rotation can add or remove rows here (e.g. "
+            'winter adds "Snow Tyres Fitted" / "Snow Tyres Not Fitted" above '
+            "Performance Class) — re-count both rows after a season change, "
+            "not just after a garage change."
         ),
         "slides": [
             ("01.png", 'Go to the Festival Site (or your House), then the "Cars" tab, and click My Cars.'),
@@ -59,12 +63,18 @@ WIZARD_STEPS: dict[str, dict] = {
                 "03.png",
                 "Count the rows from the very top of the filter list until you reach "
                 "your 9x multiplier car's Performance Class and check it. In this "
-                "example: row 10.",
+                "example: row 10.\n\n"
+                "Note: FH6's seasonal rotation can add rows above this one (e.g. "
+                'winter adds "Snow Tyres Fitted" / "Snow Tyres Not Fitted"), '
+                "shifting this count — re-check it after any season change, not "
+                "just a garage change.",
             ),
             (
                 "04.png",
                 "Keep counting down from the very top until you reach your 9x "
-                "multiplier car's Car Type and check it. In this example: row 36.",
+                "multiplier car's Car Type and check it. In this example: row 36.\n\n"
+                "Same seasonal caveat as Performance Class above applies here too, "
+                "since it's counted from the same top of the list.",
             ),
         ],
     },

@@ -255,7 +255,19 @@ SETTINGS_INFO: dict[str, tuple[str, str]] = {
         "Hypercars — this only matters if your own multiplier car happens "
         "to fall under that same class and type.) Re-check both rows before "
         "starting a new farm run if your garage has changed at all since "
-        "you last set this up, rather than assuming it's still accurate.",
+        "you last set this up, rather than assuming it's still accurate.\n\n"
+        "IMPORTANT: FH6's own seasonal rotation can add or remove rows here "
+        "too, independent of anything in your garage — winter, for example, "
+        'adds two extra checkboxes ("Snow Tyres Fitted" / "Snow Tyres Not '
+        'Fitted") above Performance Class, pushing every row from Performance '
+        "Class down by 2 for as long as that season lasts. This mainly bites "
+        "the manual Filter Row fields, since a row number counted before a "
+        "season change is no longer where the farm expects it after one — "
+        "re-count both rows after any season change, not just a garage "
+        'change. "Find Automatically" copes with this on its own (it '
+        "re-scans and scrolls to find each one fresh every time it's run), "
+        "so re-running it after a season change is the easier fix if you're "
+        "using that instead of manual entry.",
     ),
     "multiplier_position": (
         "9x Multiplier Car — Position",

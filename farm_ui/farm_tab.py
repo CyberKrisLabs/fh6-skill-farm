@@ -73,8 +73,14 @@ _SECS_TRANS_UNLOCK = 7  # buy done → car list — exact
 # challenges (per the same notes) is noise not worth surfacing. CR gained
 # from unlocking (CarInfo.cr_reward, e.g. the Viper's 150,000 CR) IS tracked,
 # since that's a real per-car reward, not challenge change.
+#
+# _XP_FIRST_SKILL_UNLOCK (2026-07-30, field-reported): unlocking the very
+# first skill in a freshly-bought car's own skill tree pays out a flat 5,000
+# XP, separate from and on top of the per-SP amount above — every car pays
+# this once per unlock, regardless of its own sp_to_unlock/wheelspin yields.
 _XP_PER_CHALLENGE = 2500
 _XP_PER_SP_UNLOCK = 200
+_XP_FIRST_SKILL_UNLOCK = 5000
 
 
 def _fmt_time(secs: float) -> str:
@@ -104,13 +110,15 @@ def _noncycle_secs(n: int) -> int:
 def _gains_estimate_str(total_challenges: int, total_cars_unlocked: int) -> str:
     """Estimated XP/wheelspins/CR for a whole simulated session — challenges ×
     _XP_PER_CHALLENGE, plus cars-unlocked × (this car's sp_to_unlock ×
-    _XP_PER_SP_UNLOCK) for XP, and cars-unlocked × the car's own
-    wheelspins/super_wheelspins/cr_reward yields. Zero-value rewards (e.g.
-    Super Wheelspins for a car that doesn't grant any) are omitted, same
-    convention as the Settings tab's own car-reward readouts.
+    _XP_PER_SP_UNLOCK + _XP_FIRST_SKILL_UNLOCK) for XP, and cars-unlocked ×
+    the car's own wheelspins/super_wheelspins/cr_reward yields. Zero-value
+    rewards (e.g. Super Wheelspins for a car that doesn't grant any) are
+    omitted, same convention as the Settings tab's own car-reward readouts.
     """
     car = config.CFG.car
-    xp = total_challenges * _XP_PER_CHALLENGE + total_cars_unlocked * car.sp_to_unlock * _XP_PER_SP_UNLOCK
+    xp = total_challenges * _XP_PER_CHALLENGE + total_cars_unlocked * (
+        car.sp_to_unlock * _XP_PER_SP_UNLOCK + _XP_FIRST_SKILL_UNLOCK
+    )
     wheelspins = total_cars_unlocked * car.wheelspins
     super_wheelspins = total_cars_unlocked * car.super_wheelspins
     cr_reward = total_cars_unlocked * car.cr_reward
@@ -938,7 +946,7 @@ class FarmTabMixin:
             self._cr_spent += delta * config.CFG.car.price_cr
         else:
             car = config.CFG.car
-            self._gained_xp += delta * car.sp_to_unlock * _XP_PER_SP_UNLOCK
+            self._gained_xp += delta * (car.sp_to_unlock * _XP_PER_SP_UNLOCK + _XP_FIRST_SKILL_UNLOCK)
             self._gained_wheelspins += delta * car.wheelspins
             self._gained_super_wheelspins += delta * car.super_wheelspins
             self._gained_cr += delta * car.cr_reward

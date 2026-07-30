@@ -644,15 +644,27 @@ pytest --cov --cov-report=term-missing
   header row) and estimated (the pre-run Summary line) — see "XP and CR.txt"
   for the field-measured source numbers.** XP = challenges completed ×
   `_XP_PER_CHALLENGE` (2,500 — the ultimate skill chain reward shown after
-  every challenge) + cars unlocked × that car's `sp_to_unlock` ×
+  every challenge) + cars unlocked × (that car's `sp_to_unlock` ×
   `_XP_PER_SP_UNLOCK` (200 — exact on both the Lambo's 39 SP/7800 XP and the
-  Viper's 30 SP/6000 XP). Wheelspins/Super Wheelspins/CR are cars unlocked ×
-  the selected car's own `wheelspins`/`super_wheelspins`/`cr_reward` yields
-  (0-value ones omitted, same convention as the Settings tab's car-reward
-  readouts). **CR gained from challenges themselves is deliberately never
-  tracked or shown** — ~3,721 CR over 24 challenges (per the same notes) is
-  noise; CR from a car's `cr_reward` (e.g. the Viper's 150,000 CR) very much
-  is not, and is shown.
+  Viper's 30 SP/6000 XP) + `_XP_FIRST_SKILL_UNLOCK`). Wheelspins/Super
+  Wheelspins/CR are cars unlocked × the selected car's own
+  `wheelspins`/`super_wheelspins`/`cr_reward` yields (0-value ones omitted,
+  same convention as the Settings tab's car-reward readouts). **CR gained
+  from challenges themselves is deliberately never tracked or shown** —
+  ~3,721 CR over 24 challenges (per the same notes) is noise; CR from a
+  car's `cr_reward` (e.g. the Viper's 150,000 CR) very much is not, and is
+  shown.
+  - **`_XP_FIRST_SKILL_UNLOCK = 5000` (2026-07-30, field-reported):**
+    unlocking the very first skill in a freshly-bought car's own skill tree
+    pays a flat 5,000 XP separate from, and on top of, the per-SP amount
+    above — every car pays this once per unlock, regardless of its own
+    `sp_to_unlock`/wheelspin yields (both the Lambo and Viper confirmed to
+    grant it). Not part of the `_XP_PER_SP_UNLOCK` field measurement above
+    (that ratio landed on an exact 200/SP for both cars with no remainder,
+    meaning the original "XP and CR.txt" totals didn't include this bonus)
+    — treated as a separate, additive term rather than folded into
+    `_XP_PER_SP_UNLOCK`, so a future car with a different `sp_to_unlock`
+    doesn't need this constant re-derived.
   - Live counter (`farm_tab._on_gains_progress`) is fed by the existing
     `orchestrator.phase_progress_hook` (already wired for the in-game
     overlay — see `overlay.py`'s own `_on_phase_progress`), not by scraping
