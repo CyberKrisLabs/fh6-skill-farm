@@ -5,4 +5,4 @@ Bump this when cutting a release — see docs/releasing.md. installer/installer.
 release workflow from the pushed git tag).
 """
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
